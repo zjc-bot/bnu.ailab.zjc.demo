@@ -23,14 +23,18 @@ def register(socketio):
         if not uid:
             return False          # 拒绝匿名连接
         session["socket_uid"] = uid
-        _sids[uid] = request.sid
+        # 一个用户可能有多个标签页，保留全部 sid；单值会被后连的覆盖，
+        # 导致邀请只投到最后一个连接（可能已关闭）。
+        _sids.setdefault(uid, set()).add(request.sid)
         emit("connected", {"uid": uid})
 
     @socketio.on("disconnect")
     def on_disconnect(reason=None):
         uid = session.get("socket_uid")
-        if uid and _sids.get(uid) == request.sid:
-            _sids.pop(uid, None)
+        if uid and uid in _sids:
+            _sids[uid].discard(request.sid)
+            if not _sids[uid]:
+                _sids.pop(uid, None)
         # 不立即销毁房间：对方断线后重连应能恢复（见 §8.3）
 
     @socketio.on("game:invite")
@@ -55,6 +59,13 @@ def register(socketio):
         if not conv:
             return {"ok": False, "error": "会话不存在，请先成为好友"}
         room_id = int(conv["id"])
+        # 邀请即建房：否则 game:join 拿到的 room_id 在 manager 里不存在，全链路断裂。
+        # 房间以会话 id 为 room_id，天然保证同一对好友同一时刻只有一局。
+        try:
+            manager.create_room(room_id, game, uid, peer)
+        except manager.RoomError:
+            # 已存在房间（对方正在对局）：直接复用，不重复创建
+            pass
         peer_sid = _peer_sid(peer)
         if peer_sid:
             emit("game:invited", {
@@ -89,14 +100,15 @@ def register(socketio):
             return {"ok": False, "error": "未登录"}
         room_id = int(data.get("room") or 0)
         move = data.get("move")
-        next_state = data.get("state")
-        # 注意：next_state 来自客户端，仅作暂存；真实校验由 rules 层在 Phase 3 补齐。
-        # 当前阶段用 manager 的回合校验防止乱序与越权。
+        # 只把坐标交给服务端规则层；客户端传来的 state 一律忽略，
+        # 棋盘由 rules 从服务端状态派生，杜绝伪造棋盘与胜负。
         try:
-            snap = manager.apply_move(room_id, uid, move, next_state)
+            snap = manager.apply_move(room_id, uid, move)
         except manager.RoomError as e:
             return {"ok": False, "error": str(e)}
         emit("game:state", snap, to=room_id)
+        if snap["status"] == "finished" and snap.get("result"):
+            emit("game:over", snap, to=room_id)
         return {"ok": True}
 
     @socketio.on("game:resign")
@@ -114,9 +126,11 @@ def register(socketio):
         return {"ok": True}
 
 
-# uid -> sid 映射（用于定向推送邀请）
+# uid -> {sid, ...}（一个用户可多连接）
 _sids = {}
 
 
 def _peer_sid(peer_uid):
-    return _sids.get(peer_uid)
+    """取该用户任意一个在线连接；投递到任一端即可，前端会同步。"""
+    sids = _sids.get(peer_uid)
+    return next(iter(sids)) if sids else None

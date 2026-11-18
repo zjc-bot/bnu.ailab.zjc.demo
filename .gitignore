@@ -33,5 +33,5 @@ venv/
 .DS_Store
 Thumbs.db
 
-# ===== 图片素材备份（大文件，归档用）=====
-backup/pet-removal-*/
+# ===== 所有备份目录（禁止入库：含源码快照、密钥、PII）=====
+backup/*/

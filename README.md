@@ -53,7 +53,7 @@ D:/MySQL/
 │   ├── app.py              路由入口（约 1192 行）
 │   ├── db.py               数据访问层（约 750 行）
 │   ├── admin.py            管理后台蓝图（约 590 行）
-│   ├── schema*.sql         6 个分模块建表脚本
+│   ├── schema*.sql         7 个分模块建表脚本（含 avatar 幂等迁移）
 │   ├── templates/          Jinja2 模板（home.html 等）
 │   ├── static/             JS/CSS；im.js 为当前 IM 入口
 │   └── deploy/             ECS 部署脚本
@@ -72,16 +72,19 @@ D:/MySQL/
 
 ### 已完成
 
-- **Phase 0 地基**（提交 `476e4a6`）：私钥备份移出到回收站、明文密码改环境变量、`SECRET_KEY` 缺失拒绝启动、6 个 schema 全部纳入部署、admin 白名单封堵 XFF 伪造、git 仓库初始化。
+- **Phase 0 地基**（提交 `476e4a6`）：私钥备份移出到回收站、明文密码改环境变量、`SECRET_KEY` 缺失拒绝启动、schema 全部纳入部署、admin 白名单封堵 XFF 伪造、git 仓库初始化。
 - **AI 聊天记录导出**：`/api/chat/export?format=md|json`，小鲸会话头部有下载按钮，可导出全部对话。
 - 修复 AI 对话 `add_message` 重名致命 Bug（现已改名 `add_chat_message` / `add_im_message`）。
 - 移除浮动桌宠形象，保留小鲸导览员人设与聊天头像。
+- **用户头像**：上传/裁剪/删除全链路，含 `avatar_url` 列与幂等迁移；用户自助删除、管理员删用户时均清理磁盘文件。
+- **游戏骨架链路修复**：邀请即建房（原 `create_room` 只在测试调用）、终局快照含 result、sid 映射支持多标签页。
+- **服务端权威校验**：`games/rules/` 五子棋规则层，客户端只提交坐标、棋盘由服务端派生，杜绝伪造棋盘；13 项单测全过。
 - SQL 注入、XSS、CSRF、会话固定、CSV 注入均已防护，安全响应头齐全。
 
 ### 进行中 / 待决策
 
 1. **服务器 SSH 密钥轮换**（Phase 0 未完事项）：项目内私钥副本已移走，但服务器上的密钥对尚未轮换，需 hi 拍板后操作。
-2. **Phase 2 生产切换**：Socket.IO 本地骨架已完成（8 项单测全过），但 gunicorn 的 gevent worker 与 nginx Upgrade 配置需 hi 拍板后才动服务器。当前同步 worker 下 WebSocket 会退化为长轮询（HTTP 仍可用）。
+2. **Phase 2 生产切换**：Socket.IO 本地骨架已完成（13 项单测全过），但 gunicorn 的 gevent worker 与 nginx Upgrade 配置需 hi 拍板后才动服务器。当前同步 worker 下 WebSocket 会退化为长轮询（HTTP 仍可用）。已实现五子棋服务端权威校验；**AI 对手、离线邀请、其余游戏规则未实现**，详见总纲 §9 Phase 2。
 3. **AI 游戏对手**：方向已定（可选增强，好友对战是主线），设计见总纲 §8.1.1。
 
 ### 已知限制

@@ -512,13 +512,6 @@ def set_avatar(user_id, url):
             conn.commit()
 
 
-def avatar_owner_ids():
-    with connect() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) AS c FROM app_user WHERE avatar_url IS NOT NULL")
-            return cur.fetchone()["c"]
-
-
 def is_friend(user_id, other_id):
     with connect() as conn:
         with conn.cursor() as cur:

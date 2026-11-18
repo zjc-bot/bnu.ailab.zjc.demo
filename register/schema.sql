@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS `app_user` (
   `student_no`        VARCHAR(20)  NOT NULL COMMENT '学号，唯一',
   `real_name`         VARCHAR(50)  NOT NULL COMMENT '真实姓名，取自名单',
   `nickname`          VARCHAR(50)  NOT NULL COMMENT '平台昵称，唯一',
+  `avatar_url`        VARCHAR(255) NULL COMMENT '用户自定义头像访问路径，NULL 表示用默认头像',
   `email`             VARCHAR(100) NOT NULL COMMENT '校内邮箱，唯一',
   `password_hash`     VARCHAR(255) NOT NULL COMMENT 'scrypt 哈希',
   `email_verified`    TINYINT      NOT NULL DEFAULT 0 COMMENT '邮箱是否已验证',

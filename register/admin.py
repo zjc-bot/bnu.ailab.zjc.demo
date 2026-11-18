@@ -424,10 +424,23 @@ def delete_user(uid):
             cur.execute("DELETE FROM app_user WHERE id=%s", (uid,))
             conn.commit()
 
+    # 清理该用户的头像文件（命名规则：u{uid}_{12位hex}.webp）
+    avatar_removed = 0
+    avatar_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "var", "avatar")
+    prefix = f"u{uid}_"
+    if os.path.isdir(avatar_dir):
+        for name in os.listdir(avatar_dir):
+            if name.startswith(prefix) and name.endswith(".webp"):
+                try:
+                    os.remove(os.path.join(avatar_dir, name))
+                    avatar_removed += 1
+                except OSError:
+                    pass
+
     admin_name = session.get("aname", "admin")
     current_app.logger.warning(
-        "管理员删除用户 admin=%s uid=%s student=%s name=%s email=%s",
-        admin_name, uid, row["student_no"], row["real_name"], email,
+        "管理员删除用户 admin=%s uid=%s student=%s name=%s email=%s 头像文件=%d",
+        admin_name, uid, row["student_no"], row["real_name"], email, avatar_removed,
     )
 
     return redirect(url_for(

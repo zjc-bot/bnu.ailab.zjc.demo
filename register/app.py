@@ -1225,7 +1225,16 @@ def upload_cropped_avatar():
 def delete_avatar():
     if not _check_csrf(request.form.get("csrf", "")):
         abort(400)
-    db.set_avatar(session["uid"], None)
+    uid = session["uid"]
+    db.set_avatar(uid, None)
+    # 同步清理磁盘文件，避免恢复默认后图片残留（PIPL 删除权）
+    prefix = f"u{uid}_"
+    for name in os.listdir(AVATAR_DIR):
+        if name.startswith(prefix) and name.endswith(".webp"):
+            try:
+                os.remove(os.path.join(AVATAR_DIR, name))
+            except OSError:
+                app.logger.debug("清理头像文件失败 %s", name, exc_info=True)
     return redirect(url_for("profile", ok="已恢复默认头像"))
 
 

@@ -56,7 +56,7 @@
 | register 规模 | app.py 1192 行、db.py 750 行、admin.py 590 行（2026-11-18 复核） |
 | 数据库脚本 | schema.sql / schema_admin / schema_security / schema_ai / schema_byok / schema_chat（6 个） |
 | 实时通道 | SSE（AI 流式输出，正常在用）；IM 采用 2 秒轮询；**无 WebSocket** |
-| 版本控制 | git 仓库已初始化（2026-11-18，首次提交 `476e4a6`），无 CI；register 已有 8 项房间管理单测 |
+| 版本控制 | git 仓库已初始化（2026-11-18，首次提交 `476e4a6`），无 CI；register 已有 13 项游戏单测 |
 | 访问方式 | SSH 隧道：`打开学生管理.bat` → 8080，`打开注册系统.bat` → 8082 |
 | 安全基线 | SQL 注入、XSS、CSRF、会话固定、CSV 注入均已防护；响应头齐全 |
 
@@ -189,8 +189,9 @@ D:/MySQL/
 | `schema_ai.sql` | AI 对话消息、用量、配置 |
 | `schema_byok.sql` | 用户自有 API Key |
 | `schema_chat.sql` | 好友、会话、IM 消息 |
+| `schema_avatar.sql` | 用户头像字段迁移（幂等 ALTER，2026-11-18 新增） |
 
-**已知缺陷**：`register/deploy/deploy.py:44-48` 只部署了 `schema.sql`，其余 5 个从未被部署脚本引用。本总纲要求部署脚本遍历全部 `schema*.sql`。
+**部署现状**：`register/deploy/deploy.py` 已改为 `glob("schema*.sql")` 遍历全部脚本，`schema.sql` 优先执行（新库建表、老库补列）。早期"只部署 schema.sql"的缺陷已修复。
 
 ### 7.2 新增游戏数据（规划）
 
@@ -292,13 +293,27 @@ D:/MySQL/
 
 ### Phase 2 — 实时通道：Socket.IO 上线
 
-**进度（2026-11-18）**：本地代码骨架已完成并通过单测；**生产部署配置未改，待 hi 拍板**。
+**进度（2026-11-18）**：本地代码骨架已完成并通过单测；**生产部署配置未改，待 hi 拍板**。注意：骨架仅打通 PvP 流程控制，**规则校验与 AI 对战尚未实现**，不可视为可玩的完整对局。
 
 **已交付（本地）**
 - `register/games/` 包：Socket.IO 事件层（邀请/加入/落子/认输）、内存房间管理、服务端回合权威校验
 - 握手复用 Flask session 认证；`conversation_id` 作 room_id；仅好友可加入
+- 邀请即建房（`game:invite` 调 `create_room`），修复"建房函数只在测试里调用、事件层从不建房"导致的全链路断裂
+- `snapshot()` 含 `result` 字段，终局广播与重连可恢复胜负
+- 在线 sid 映射改为集合，支持同用户多标签页
 - 本地 `socketio.run` 启动；gunicorn `app:app` 入口保持不变
-- `register/tests/test_games.py`：8 项单测全过（回合校验、越权拒绝、终局拒绝等）
+- `register/tests/test_games.py`：13 项单测全过（回合校验、越权拒绝、快照 result、规则层校验等）
+
+**服务端权威校验（2026-11-18 已补）**
+- `games/rules/` 规则层已接入：五子棋 `gomoku` 15×15 棋盘、坐标/占用/越界校验、五连胜负判定
+- 客户端只提交坐标 `{"x","y"}`，棋盘由规则层从服务端 state 派生；`apply_move` 不再接收客户端 state
+- 玩家编号由服务端按 turn 推导，客户端无法冒充；规则未接入的游戏一律拒绝落子
+- 13 项单测全过（含伪造棋盘、重复落子、越界、五连终局）
+
+**骨架阶段限制（Phase 3 处理）**
+- `create_room` 的 `p2` 目前强制 int；PvE 的 `'ai:whale'` 特殊玩家尚未接入事件层
+- 邀请未落 `message` 表，离线用户上线后查不到邀请
+- `rules/` 目前仅五子棋，象棋/国象等按总纲 §8.1 分批接入
 
 **待交付（需 hi 拍板后动服务器）**
 - gunicorn 改 `geventwebsocket` 单 worker + `--timeout 0`
@@ -376,6 +391,12 @@ D:/MySQL/
 | 2026-11-18 | 移除浮动桌宠（导览员形象），保留对话功能 | 用户决定不保留桌宠；24 个素材文件移入回收站，相关路由/DOM/脚本清理；头像 `avatar.webp` 因会话列表共用而保留 |
 | 2026-11-18 | AI 对话前端入口被移除，后端成为待定死代码 | 18:24–18:30 `home.html` 改为纯 IM 界面、`chat.js` 失去引用；非本次总纲编辑所致。去留待 hi 拍板（§13.0） |
 | 2026-11-18 | 更正"SSE 推送邀请"的技术假设 | 现有 SSE 绑定单次请求、无法主动推送；在线通知改由 Socket.IO 承担（§8.4） |
+| 2026-11-18 | 补 `avatar_url` 列并新增幂等迁移脚本 | 头像上传/渲染已上线但 schema 漏列，导致登录后 4 类查询报 Unknown column；在 schema.sql 加列 + 新建 schema_avatar.sql（ADD COLUMN IF NOT EXISTS），部署脚本 glob 自动纳入 |
+| 2026-11-18 | 部署脚本已覆盖全部 schema | 由早期只部署 schema.sql 改为 glob 遍历，新库/老库均可正确建表补列（§7.1） |
+| 2026-11-18 | 修复游戏骨架"邀请不建房"链路断裂 | `create_room()` 仅测试调用、事件层从未调用，`game:join` 必然失败；改为邀请时建房（幂等容错已存在房间） |
+| 2026-11-18 | snapshot 暴露 result + sid 映射改集合 | 终局广播丢胜负、同用户多标签页互相覆盖导致邀请投递错连接 |
+| 2026-11-18 | 接入 `games/rules/` 服务端权威校验 | game:move 原采信客户端 state 可伪造棋盘，违反 §6.3 红线；改为客户端只提交坐标、规则层派生棋盘，含五连胜负判定；单测 9→13 |
+| 2026-11-18 | `.gitignore` 忽略全部 backup 子目录 | 原仅忽略 pet-removal-*，新增的备份目录会被误提交；总纲 §6 禁止备份入库 |
 | 2026-11-18 | Phase 0 地基完成（首次提交 `476e4a6`） | 私钥移出回收站、密码改环境变量、SECRET_KEY fail-fast、6 schema 全部署、ProxyFix x_for=0；git 仓库初始化。**服务器密钥轮换未做，待 hi 拍板** |
 | 2026-11-18 | 保留 AI 对话；AI 对战定位为可选对手（hi 拍板） | 用户明确"AI 聊天要保留，聊天记录可导出；AI 也能玩游戏（双人类型），但不是强制要加，可以是好友加入"。撤销"彻底移除 AI"的错误方向；**好友对战是主线，AI 对战是可选增强**，不强制每种游戏都做（§8.1.1） |
 | 2026-11-18 | 澄清"AI 前端入口已移除"为误判 | 实测：AI 聊天已整合进 `im.js`（小鲸会话项、history、流式对话全在），后端三路由完整；`chat.js` 为被取代的旧文件。此前基于旧快照的文档判断已更正 |

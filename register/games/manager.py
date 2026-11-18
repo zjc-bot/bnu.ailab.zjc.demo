@@ -9,6 +9,8 @@
 import threading
 import time
 
+from . import rules
+
 # room_id -> {game, players, state, turn, seq, created_at, status}
 _rooms = {}
 _lock = threading.RLock()
@@ -30,10 +32,14 @@ def create_room(room_id, game, p1, p2, initial_state=None):
             sweep()
             if len(_rooms) >= MAX_ROOMS:
                 raise RoomError("房间数已达上限")
+        try:
+            state = rules.initial_state(game)
+        except rules.GameRuleError as e:
+            raise RoomError(str(e))
         _rooms[room_id] = {
             "game": game,
             "players": [p1, p2],
-            "state": initial_state or {},
+            "state": state,             # 服务端权威棋盘，客户端无法改写
             "turn": 0,                  # players 下标
             "seq": 0,
             "created_at": time.time(),
@@ -66,11 +72,15 @@ def snapshot(room_id):
         "turn": r["turn"],
         "seq": r["seq"],
         "status": r["status"],
+        "result": r.get("result"),   # 终局结果，供 game:over 广播与重连恢复
     }
 
 
-def apply_move(room_id, uid, move, next_state):
-    """权威校验后落一步。成功返回新快照，失败抛 RoomError。"""
+def apply_move(room_id, uid, move):
+    """服务端权威落子：棋盘由规则层从当前 state 派生，绝不采信客户端 state。
+
+    成功返回新快照；非法着法/越权/规则错误一律抛 RoomError。
+    """
     with _lock:
         r = get_room(room_id)
         if not r:
@@ -79,12 +89,23 @@ def apply_move(room_id, uid, move, next_state):
             raise RoomError("对局已结束")
         if r["players"][r["turn"]] != uid:
             raise RoomError("还没轮到你")
-        if not isinstance(move, dict) or not move:
-            raise RoomError("无效的着法")
-        seq = r["seq"] + 1
-        r["state"] = next_state
-        r["turn"] = 1 - r["turn"]
-        r["seq"] = seq
+
+        # player 编号由服务端按 turn 推导，客户端无法冒充对手
+        player = r["turn"] + 1
+        try:
+            new_state = rules.apply_move(r["game"], r["state"], move, player)
+        except (rules.GameRuleError, rules.gomoku.RuleError) as e:
+            raise RoomError(str(e))
+
+        r["state"] = new_state
+        r["seq"] += 1
+        # 五连即终局；无胜负判定规则的游戏继续轮流
+        if new_state.get("winner"):
+            r["status"] = "finished"
+            r["result"] = {"winner": r["players"][new_state["winner"] - 1],
+                           "reason": "five_in_row"}
+        else:
+            r["turn"] = 1 - r["turn"]
         return snapshot(room_id)
 
 
