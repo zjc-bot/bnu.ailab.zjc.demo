@@ -20,6 +20,7 @@
   <div class="topbar-right">
     <nav class="admin-nav">
       <a href="{{ url_for('home') }}">消息</a>
+      <a href="{{ url_for('games_page') }}">对战</a>
       <a href="{{ url_for('profile') }}" class="on">账号</a>
     </nav>
     <form method="post" action="{{ url_for('logout') }}">

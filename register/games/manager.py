@@ -42,6 +42,7 @@ def create_room(room_id, game, p1, p2, initial_state=None):
             "state": state,             # 服务端权威棋盘，客户端无法改写
             "turn": 0,                  # players 下标
             "seq": 0,
+            "moves": [],                # 着法序列 [{player,x,y}]，终局归档用
             "created_at": time.time(),
             "status": "active",
         }
@@ -73,6 +74,7 @@ def snapshot(room_id):
         "seq": r["seq"],
         "status": r["status"],
         "result": r.get("result"),   # 终局结果，供 game:over 广播与重连恢复
+        "moves": list(r.get("moves", [])),
     }
 
 
@@ -99,6 +101,10 @@ def apply_move(room_id, uid, move):
 
         r["state"] = new_state
         r["seq"] += 1
+        # 记录权威着法（player 由 turn 推导，不采信客户端）
+        r.setdefault("moves", []).append(
+            {"player": player, "x": move.get("x"), "y": move.get("y")}
+        )
         # 五连即终局；无胜负判定规则的游戏继续轮流
         if new_state.get("winner"):
             r["status"] = "finished"

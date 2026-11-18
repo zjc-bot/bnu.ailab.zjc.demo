@@ -633,6 +633,23 @@ def home():
                            members=members, ms=db.member_stats())
 
 
+@app.get("/games")
+@login_required
+def games_page():
+    """对战大厅：好友对战（PvP）主线。"""
+    user = db.get_user(session["uid"])
+    if not user:
+        session.clear()
+        return redirect(url_for("login_page"))
+    return render_template(
+        "games.html",
+        csrf=_csrf(),
+        user=user,
+        friends=db.list_friends(session["uid"]),
+        records=db.list_game_records(session["uid"], limit=20),
+    )
+
+
 # ---------- AI 对话 ----------
 
 AI_BASE = os.environ.get("AI_BASE_URL", "https://api.deepseek.com").rstrip("/")

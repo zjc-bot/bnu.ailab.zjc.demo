@@ -780,3 +780,34 @@ def total_unread(user_id):
                 (user_id, user_id, user_id),
             )
             return cur.fetchone()["c"]
+
+
+# ---------- 对战归档 ----------
+
+def save_game_record(conv_id, game, player_a, player_b, winner, reason, moves, steps):
+    """终局写一条归档。moves 为着法列表，由调用方转成 JSON 字符串。"""
+    with connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO game_record"
+                "(conv_id, game, player_a, player_b, winner, reason, moves, steps) "
+                "VALUES(%s,%s,%s,%s,%s,%s,%s,%s)",
+                (conv_id, game, player_a, player_b, winner, reason, moves, steps),
+            )
+            rid = cur.lastrowid
+            conn.commit()
+            return rid
+
+
+def list_game_records(user_id, limit=20):
+    """个人战绩：该用户参与的最近 N 局。"""
+    with connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, conv_id, game, player_a, player_b, winner, reason, "
+                "       steps, created_at "
+                "FROM game_record WHERE player_a=%s OR player_b=%s "
+                "ORDER BY id DESC LIMIT %s",
+                (user_id, user_id, limit),
+            )
+            return cur.fetchall()

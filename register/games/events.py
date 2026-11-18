@@ -4,6 +4,8 @@
 房间：conversation_id 作为 room_id，仅好友可加入。
 """
 
+import json
+
 import db as root_db
 from flask import request, session
 from flask_socketio import emit, join_room, leave_room
@@ -92,6 +94,28 @@ def register(socketio):
         emit("game:state", manager.snapshot(room_id))
         return {"ok": True}
 
+    def archive(room_id):
+        """终局归档：一步棋不落库，只在结束时写一条。失败只记日志，不影响对局。"""
+        r = manager.get_room(room_id)
+        if not r or not r.get("result"):
+            return
+        result = r["result"]
+        try:
+            root_db.save_game_record(
+                conv_id=room_id,
+                game=r["game"],
+                player_a=r["players"][0],
+                player_b=r["players"][1],
+                winner=result.get("winner"),
+                reason=result.get("reason", ""),
+                moves=json.dumps(r.get("moves", []), ensure_ascii=False),
+                steps=r.get("seq", 0),
+            )
+        except Exception:
+            # 归档失败不应让对局端收到错误；日志留痕供排查。
+            import flask
+            flask.current_app.logger.exception("对局归档失败 room=%s", room_id)
+
     @socketio.on("game:move")
     def on_move(data):
         """落子：服务端权威校验后广播完整快照。"""
@@ -108,6 +132,7 @@ def register(socketio):
             return {"ok": False, "error": str(e)}
         emit("game:state", snap, to=room_id)
         if snap["status"] == "finished" and snap.get("result"):
+            archive(room_id)
             emit("game:over", snap, to=room_id)
         return {"ok": True}
 
@@ -122,6 +147,7 @@ def register(socketio):
             return {"ok": False, "error": "无权操作"}
         winner = r["players"][1 - r["players"].index(uid)]
         snap = manager.finish(room_id, {"winner": winner, "reason": "resign"})
+        archive(room_id)
         emit("game:over", snap, to=room_id)
         return {"ok": True}
 

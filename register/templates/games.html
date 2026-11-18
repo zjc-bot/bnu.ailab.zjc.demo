@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="csrf" content="{{ csrf }}">
+<meta name="uid" content="{{ user.id }}">
+<meta name="uname" content="{{ user.nickname or user.real_name }}">
+<title>对战 · BNU AI Lab</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=8">
+<style>
+.gm-layout { display: grid; grid-template-columns: 260px 1fr; gap: 20px; align-items: start; }
+.gm-side { padding: 16px; }
+.gm-side h3 { font-size: 14px; margin-bottom: 12px; }
+.gm-friend { display: flex; align-items: center; gap: 10px; padding: 9px 6px; border-bottom: 1px solid var(--line); }
+.gm-friend:last-child { border-bottom: 0; }
+.gm-friend-info { flex: 1; min-width: 0; }
+.gm-friend-name { font-size: 13px; font-weight: 500; }
+.gm-friend-no { font-size: 11px; color: var(--faint); font-family: ui-monospace, monospace; }
+.gm-board-wrap { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.gm-status { font-size: 14px; color: var(--muted); min-height: 22px; text-align: center; }
+.gm-status b { color: var(--text); }
+.gm-board { display: grid; grid-template-columns: repeat(15, 34px); grid-template-rows: repeat(15, 34px);
+  background: #dcb35c; border: 2px solid #8a6a2f; border-radius: 4px; padding: 6px; gap: 0;
+  box-shadow: var(--shadow); }
+.gm-cell { width: 34px; height: 34px; position: relative; cursor: pointer; }
+.gm-cell::before, .gm-cell::after { content: ''; position: absolute; background: #8a6a2f; opacity: .45; }
+.gm-cell::before { left: 0; right: 0; top: 50%; height: 1px; }
+.gm-cell::after { top: 0; bottom: 0; left: 50%; width: 1px; }
+.gm-stone { position: absolute; width: 28px; height: 28px; border-radius: 50%; left: 3px; top: 3px; z-index: 2;
+  box-shadow: 0 1px 2px rgba(0,0,0,.35); }
+.gm-stone.p1 { background: #1f2937; }
+.gm-stone.p2 { background: #f9fafb; border: 1px solid #9ca3af; }
+.gm-cell:hover .gm-stone:empty { box-shadow: inset 0 0 0 2px rgba(29,78,216,.4); }
+.gm-rec { margin-top: 20px; padding: 16px; }
+.gm-rec table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.gm-rec th, .gm-rec td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.gm-rec th { color: var(--muted); font-weight: 500; font-size: 12px; }
+.gm-actions { display: flex; gap: 10px; }
+.gm-empty { color: var(--faint); font-size: 13px; padding: 8px 0; }
+@media (max-width: 720px) { .gm-layout { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-left">
+    <div class="mark">B</div>
+    <div><h1>BNU AI Lab</h1><p class="sub">对战</p></div>
+  </div>
+  <div class="topbar-right">
+    <nav class="admin-nav">
+      <a href="{{ url_for('home') }}">消息</a>
+      <a href="{{ url_for('games_page') }}" class="on">对战</a>
+      <a href="{{ url_for('profile') }}">账号</a>
+    </nav>
+    <form method="post" action="{{ url_for('logout') }}">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="btn ghost sm2" type="submit">退出</button>
+    </form>
+  </div>
+</header>
+
+<main class="wrap-wide">
+  <div class="page-head">
+    <h1>五子棋对战</h1>
+    <p>向好友发起对局，率先连成五子者获胜。落子由服务端校验，不可作弊。</p>
+  </div>
+
+  <div class="gm-layout">
+    <section class="card gm-side">
+      <h3>发起对局</h3>
+      <div id="gmFriends">
+        {% for f in friends %}
+        <div class="gm-friend">
+          <div class="gm-friend-info">
+            <div class="gm-friend-name">{{ f.nickname or f.real_name }}</div>
+            <div class="gm-friend-no">{{ f.student_no }}</div>
+          </div>
+          <button class="btn primary sm2" type="button"
+                  data-invite="{{ f.id }}" data-name="{{ f.nickname or f.real_name }}">邀请</button>
+        </div>
+        {% else %}
+        <p class="gm-empty">还没有好友，先去「消息」添加好友。</p>
+        {% endfor %}
+      </div>
+      <p class="gm-empty" style="margin-top:12px">邀请仅推送给同样停留在「对战」页的好友；请让对方也打开此页。</p>
+    </section>
+
+    <section class="card gm-side">
+      <div class="gm-board-wrap">
+        <div class="gm-status" id="gmStatus">选择好友发起对局，或从消息中接受邀请</div>
+        <div class="gm-board" id="gmBoard"></div>
+        <div class="gm-actions">
+          <button class="btn danger sm2" id="gmResign" type="button" disabled>认输</button>
+          <button class="btn ghost sm2" id="gmLeave" type="button" disabled>离开</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <section class="card gm-rec">
+    <h3 style="font-size:14px; margin-bottom:12px">最近战绩</h3>
+    <table>
+      <thead><tr><th>时间</th><th>对手</th><th>执子</th><th>结果</th><th>步数</th></tr></thead>
+      <tbody id="gmRecords">
+        {% for r in records %}
+        <tr>
+          <td>{{ r.created_at }}</td>
+          <td>{{ '—' }}</td>
+          <td>{{ '先手' if r.player_a == user.id else '后手' }}</td>
+          <td>{{ '胜' if r.winner == user.id else ('负' if r.winner else '和') }} · {{ r.reason }}</td>
+          <td>{{ r.steps }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="gm-empty">暂无战绩</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</main>
+
+<script src="{{ url_for('static', filename='socket.io/socket.io.min.js') }}"></script>
+<script src="{{ url_for('static', filename='game.js') }}?v=1"></script>
+</body>
+</html>
