@@ -56,7 +56,7 @@
 | register 规模 | app.py 1192 行、db.py 750 行、admin.py 590 行（2026-11-18 复核） |
 | 数据库脚本 | schema.sql / schema_admin / schema_security / schema_ai / schema_byok / schema_chat（6 个） |
 | 实时通道 | SSE（AI 流式输出，后端保留但前端入口已移除）；IM 采用 2 秒轮询；**无 WebSocket** |
-| 版本控制 | **无 git 仓库**，无 CI，无自动化测试（register） |
+| 版本控制 | git 仓库已初始化（2026-11-18，首次提交 `476e4a6`），无 CI，无自动化测试（register） |
 | 访问方式 | SSH 隧道：`打开学生管理.bat` → 8080，`打开注册系统.bat` → 8082 |
 | 安全基线 | SQL 注入、XSS、CSRF、会话固定、CSV 注入均已防护；响应头齐全 |
 
@@ -322,12 +322,12 @@ D:/MySQL/
 
 | 风险 | 等级 | 现状 | 处置 |
 |---|---|---|---|
-| ECS root 私钥明文落盘 | 高 | 未处置 | Phase 0 移出 + 轮换 |
-| 6 个 schema 只部署 1 个 | 高 | 未处置 | Phase 0 修部署脚本 |
-| SECRET_KEY 随机回退 | 高 | 未处置 | Phase 0 改 fail-fast |
-| admin 白名单可被 XFF 绕过 | 中 | 未处置 | Phase 0 收敛信任链 |
+| ECS root 私钥明文落盘 | 高 | **已处置（移出）** | 私钥备份已移入回收站；**服务器轮换待 hi 拍板** |
+| 6 个 schema 只部署 1 个 | 高 | **已处置** | 部署脚本遍历全部 schema + 14 张表授权 |
+| SECRET_KEY 随机回退 | 高 | **已处置** | 两个 app 均改 fail-fast |
+| admin 白名单可被 XFF 绕过 | 中 | **已处置** | ProxyFix x_for=0，仅信任真实 TCP 对端 |
 | BYOK base_url SSRF | 中 | 未处置 | Phase 1 加域名白名单 |
-| 无 git / 无备份 | 中 | 未处置 | Phase 0 建仓库；Phase 4 备份 |
+| 无 git / 无备份 | 中 | git 已建；备份仍缺 | Phase 4 补定时备份 |
 | 内存限流多 worker 失效 | 中 | 单 worker 侥幸可用 | 文档中约束单 worker；扩容前改 Redis |
 | Narabe 引擎很新 | 低 | 已选为五子棋候选 | Phase 3 先做小规模验证 |
 | HTTP 明文下的真实 PII | 中 | README 已标注风险 | 公网化前必须上 HTTPS |
@@ -352,6 +352,7 @@ D:/MySQL/
 | 2026-11-18 | 移除浮动桌宠（导览员形象），保留对话功能 | 用户决定不保留桌宠；24 个素材文件移入回收站，相关路由/DOM/脚本清理；头像 `avatar.webp` 因会话列表共用而保留 |
 | 2026-11-18 | AI 对话前端入口被移除，后端成为待定死代码 | 18:24–18:30 `home.html` 改为纯 IM 界面、`chat.js` 失去引用；非本次总纲编辑所致。去留待 hi 拍板（§13.0） |
 | 2026-11-18 | 更正"SSE 推送邀请"的技术假设 | 现有 SSE 绑定单次请求、无法主动推送；在线通知改由 Socket.IO 承担（§8.4） |
+| 2026-11-18 | Phase 0 地基完成（首次提交 `476e4a6`） | 私钥移出回收站、密码改环境变量、SECRET_KEY fail-fast、6 schema 全部署、ProxyFix x_for=0；git 仓库初始化。**服务器密钥轮换未做，待 hi 拍板** |
 
 ---
 

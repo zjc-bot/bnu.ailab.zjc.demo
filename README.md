@@ -72,6 +72,7 @@ D:/MySQL/
 
 ### 已完成
 
+- **Phase 0 地基**（提交 `476e4a6`）：私钥备份移出到回收站、明文密码改环境变量、`SECRET_KEY` 缺失拒绝启动、6 个 schema 全部纳入部署、admin 白名单封堵 XFF 伪造、git 仓库初始化。
 - 修复 AI 对话 `add_message` 重名致命 Bug（现已改名 `add_chat_message` / `add_im_message`）。
 - 移除浮动桌宠形象，保留小鲸导览员人设与聊天头像。
 - SQL 注入、XSS、CSRF、会话固定、CSV 注入均已防护，安全响应头齐全。
@@ -79,12 +80,12 @@ D:/MySQL/
 ### 进行中 / 待决策（阻塞项）
 
 1. **AI 对话去留**（总纲 §13.0，最高优先，阻塞 Phase 2）：前端入口已从 `home.html` 移除，`chat.js` 现为孤儿文件；后端三路由、`_EmotionFilter`、`schema_ai.sql` 仍完整。二选一：恢复前端入口，或彻底移除转向 IM + 游戏。
-2. **Phase 0 地基**：密钥轮换、`SECRET_KEY` 拒绝随机回退、6 个 schema 全部纳入部署、admin 白名单收敛。
+2. **服务器 SSH 密钥轮换**（Phase 0 未完事项）：项目内私钥副本已移走，但服务器上的密钥对尚未轮换，需 hi 拍板后操作。
 
 ### 已知限制
 
 - 当前 HTTP 明文传输（靠 SSH 隧道加密）。公网化前必须上 HTTPS，不要录入真实个人信息。
-- 无 git 仓库、无 CI、register 无自动化测试。
+- git 仓库已建，但无 CI、register 无自动化测试。
 - 无定时备份；IM 每 2 秒轮询会写访问日志（待优化）。
 - gunicorn 单 worker；内存限流不支持多 worker 扩容。
 
