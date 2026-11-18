@@ -878,6 +878,51 @@ def chat_history():
     return jsonify(messages=items)
 
 
+@app.get("/api/chat/export")
+@login_required
+def chat_export():
+    """导出全部对话历史，格式 md 或 json（默认 md）。"""
+    fmt = (request.args.get("format") or "md").lower()
+    if fmt not in ("md", "json"):
+        return jsonify(error="format 仅支持 md 或 json"), 400
+
+    rows = db.all_chat_messages(session["uid"])
+    items = []
+    for r in rows:
+        d = _row_dict(r)
+        d["text"] = (d.pop("content", "") or "").strip()
+        items.append(d)
+
+    stamp = time.strftime("%Y%m%d-%H%M")
+    if fmt == "json":
+        payload = json.dumps(
+            {"exported_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+             "count": len(items), "messages": items},
+            ensure_ascii=False, indent=2,
+        )
+        mime = "application/json; charset=utf-8"
+    else:
+        lines = ["# 与小鲸的对话", "",
+                 "导出时间：" + time.strftime("%Y-%m-%d %H:%M:%S"),
+                 "消息数：" + str(len(items)), ""]
+        for d in items:
+            who = "我" if d.get("role") == "user" else "小鲸"
+            ts = str(d.get("created_at") or "")
+            lines.append("## " + who + " · " + ts)
+            lines.append("")
+            lines.append(d["text"] or "（空）")
+            lines.append("")
+        payload = "\n".join(lines)
+        mime = "text/markdown; charset=utf-8"
+
+    resp = Response(payload, mimetype=mime)
+    resp.headers["Content-Disposition"] = (
+        f'attachment; filename="whale-chat-{stamp}.{fmt}"'
+    )
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    return resp
+
+
 # ---------- 即时通讯 ----------
 
 def _row_dict(r):

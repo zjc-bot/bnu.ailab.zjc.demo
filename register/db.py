@@ -385,6 +385,18 @@ def chat_history(user_id, limit=50):
             return cur.fetchall()
 
 
+def all_chat_messages(user_id):
+    """导出用：取该用户全部对话历史，按时间正序。"""
+    with connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT role, content, emotion, created_at FROM chat_message "
+                "WHERE user_id=%s ORDER BY id ASC",
+                (user_id,),
+            )
+            return cur.fetchall()
+
+
 def clear_messages(user_id):
     with connect() as conn:
         with conn.cursor() as cur:

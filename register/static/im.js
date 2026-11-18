@@ -232,6 +232,7 @@
     activeConv = 0;
     activePeer = null;
     document.getElementById('btnRemove').hidden = true;
+    document.getElementById('btnExport').hidden = false;
     renderList();
 
     blank.hidden = true;
@@ -272,6 +273,7 @@
   function openConv(c) {
     aiMode = false;
     document.getElementById('btnRemove').hidden = false;
+    document.getElementById('btnExport').hidden = true;
     document.getElementById('headAv').classList.remove('ai');
     fillAvatar(document.getElementById('headAv'), c.nickname, c.avatar_url);
     activeConv = c.id;
@@ -299,6 +301,7 @@
   function startChatWith(f) {
     aiMode = false;
     document.getElementById('btnRemove').hidden = false;
+    document.getElementById('btnExport').hidden = true;
     document.getElementById('headAv').classList.remove('ai');
     fillAvatar(document.getElementById('headAv'), f.nickname, f.avatar_url);
     var found = convs.find(function (c) { return c.peer_id === f.id; });
@@ -634,6 +637,12 @@
       })
       .catch(function (e) { toast(e.message); });
   }
+
+  document.getElementById('btnExport').addEventListener('click', function () {
+    if (!aiMode) return;
+    window.location.href = '/api/chat/export?format=md';
+    toast('对话记录已开始下载');
+  });
 
   document.getElementById('btnRemove').addEventListener('click', function () {
     if (!activePeer || !activePeer.id) return;

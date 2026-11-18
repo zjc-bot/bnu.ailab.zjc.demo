@@ -76,6 +76,12 @@
           <div class="im-head-name" id="headName">—</div>
           <div class="im-head-sub" id="headSub"></div>
         </div>
+        <button class="im-head-more" id="btnExport" type="button" title="导出与小鲸的对话" hidden>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M12 3v12M7 10l5 5 5-5M4 19h16"/>
+          </svg>
+        </button>
         <button class="im-head-more" id="btnRemove" type="button" title="删除好友">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
                stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -133,6 +139,6 @@
   </div>
 </div>
 
-<script src="{{ url_for('static', filename='im.js') }}?v=3"></script>
+<script src="{{ url_for('static', filename='im.js') }}?v=4"></script>
 </body>
 </html>
