@@ -714,6 +714,19 @@ def get_conversation(conv_id):
             return cur.fetchone()
 
 
+def get_pair_conversation(uid_a, uid_b):
+    """按两个用户 id 取会话（对局房间用）。小 id 在前。"""
+    a, b = sorted((int(uid_a), int(uid_b)))
+    with connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, user_a, user_b FROM conversation "
+                "WHERE user_a=%s AND user_b=%s",
+                (a, b),
+            )
+            return cur.fetchone()
+
+
 def add_im_message(conv_id, sender_id, content):
     """写入即时通讯消息（message 表），不要与 AI 对话的 add_chat_message 混用。"""
     with connect() as conn:

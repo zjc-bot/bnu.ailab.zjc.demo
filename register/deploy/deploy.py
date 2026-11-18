@@ -142,6 +142,11 @@ User=regweb
 Group=regweb
 WorkingDirectory=/opt/bnu-register
 EnvironmentFile=/opt/bnu-register/.env
+# 注意：当前为同步 worker，WebSocket 会退化成长轮询（HTTP 长轮询仍可用）。
+# 若要启用原生 WebSocket 对战，需 hi 确认后改为：
+#   gunicorn -k geventwebsocket.gunicorn.workers.GeventWebSocketWorker \
+#            -w 1 --timeout 0 --bind 127.0.0.1:8081 app:app
+# 同时 nginx 需加 /socket.io 的 Upgrade 头（见总纲 §9 Phase 2）。
 ExecStart=/opt/bnu-register/venv/bin/gunicorn --workers 1 --threads 4 --bind 127.0.0.1:8081 --timeout 30 --access-logfile - --error-logfile - app:app
 Restart=on-failure
 RestartSec=3

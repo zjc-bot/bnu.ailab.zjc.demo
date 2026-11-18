@@ -35,6 +35,7 @@ import captcha
 import db
 import mailer
 import secret_box
+from games import init_games, socketio
 
 app = Flask(__name__)
 app.json.ensure_ascii = False
@@ -1366,5 +1367,9 @@ def change_password():
     return redirect(url_for("login_page", pw=1))
 
 
+# 绑定 Socket.IO（好友对战通道）。gunicorn 入口 app:app 不受影响。
+init_games(app)
+
+
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=8081, debug=False)
+    socketio.run(app, host="127.0.0.1", port=8081, debug=False, allow_unsafe_werkzeug=True)

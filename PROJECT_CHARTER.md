@@ -56,7 +56,7 @@
 | register 规模 | app.py 1192 行、db.py 750 行、admin.py 590 行（2026-11-18 复核） |
 | 数据库脚本 | schema.sql / schema_admin / schema_security / schema_ai / schema_byok / schema_chat（6 个） |
 | 实时通道 | SSE（AI 流式输出，正常在用）；IM 采用 2 秒轮询；**无 WebSocket** |
-| 版本控制 | git 仓库已初始化（2026-11-18，首次提交 `476e4a6`），无 CI，无自动化测试（register） |
+| 版本控制 | git 仓库已初始化（2026-11-18，首次提交 `476e4a6`），无 CI；register 已有 8 项房间管理单测 |
 | 访问方式 | SSH 隧道：`打开学生管理.bat` → 8080，`打开注册系统.bat` → 8082 |
 | 安全基线 | SQL 注入、XSS、CSRF、会话固定、CSV 注入均已防护；响应头齐全 |
 
@@ -292,12 +292,20 @@ D:/MySQL/
 
 ### Phase 2 — 实时通道：Socket.IO 上线
 
-**交付物**
-- gunicorn 改 gevent 单 worker + nginx `/socket.io` Upgrade 配置
-- Socket.IO 握手认证与房间管理
-- 心跳、断线重连、完整快照广播（参考 `qwas-zx/chinese-chess-game` 三步协议）
+**进度（2026-11-18）**：本地代码骨架已完成并通过单测；**生产部署配置未改，待 hi 拍板**。
 
-**验收**：两个浏览器窗口可实时同步落子；断线重连后状态一致；服务端拒绝非法回合。
+**已交付（本地）**
+- `register/games/` 包：Socket.IO 事件层（邀请/加入/落子/认输）、内存房间管理、服务端回合权威校验
+- 握手复用 Flask session 认证；`conversation_id` 作 room_id；仅好友可加入
+- 本地 `socketio.run` 启动；gunicorn `app:app` 入口保持不变
+- `register/tests/test_games.py`：8 项单测全过（回合校验、越权拒绝、终局拒绝等）
+
+**待交付（需 hi 拍板后动服务器）**
+- gunicorn 改 `geventwebsocket` 单 worker + `--timeout 0`
+- nginx 增加 `/socket.io` 的 Upgrade 头
+- 部署脚本 unit 模板已留切换注释，未实际启用
+
+**验收**：本地单测通过；生产切换后需验证两个浏览器窗口实时同步、断线重连状态一致。
 
 ### Phase 3 — 第一款游戏：五子棋
 
