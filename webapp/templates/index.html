@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="csrf" content="{{ csrf }}">
+<title>26 级学生名单</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=3">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-left">
+    <div class="brand-mark sm">S</div>
+    <div>
+      <h1>26 级学生名单</h1>
+      <p class="sub">school.student</p>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <span class="who">{{ user }}</span>
+    <form method="post" action="{{ url_for('logout') }}">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="btn ghost sm" type="submit">退出</button>
+    </form>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section class="stats">
+    <div class="stat">
+      <span class="stat-label">学生总数</span>
+      <strong class="stat-value" id="stat-total">—</strong>
+    </div>
+    <div class="stat">
+      <span class="stat-label">专业数</span>
+      <strong class="stat-value" id="stat-majors">—</strong>
+    </div>
+    <div class="stat">
+      <span class="stat-label">寝室数</span>
+      <strong class="stat-value" id="stat-dorms">—</strong>
+    </div>
+    <div class="stat wide">
+      <span class="stat-label">专业分布</span>
+      <div class="chips" id="stat-major-chips"></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="toolbar">
+      <div class="search">
+        <input id="q" type="search" placeholder="搜索学号 / 姓名 / 寝室 / 专业 / 备注" maxlength="50">
+      </div>
+      <div class="toolbar-actions">
+        <select id="opt-major" class="sel"><option value="">全部专业</option></select>
+        <select id="size" class="sel">
+          <option value="10">每页 10</option>
+          <option value="20" selected>每页 20</option>
+          <option value="50">每页 50</option>
+          <option value="100">每页 100</option>
+        </select>
+        <button class="btn primary" id="btn-new" type="button">+ 新增</button>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table class="grid">
+        <thead>
+          <tr>
+            <th data-sort="student_no">学号</th>
+            <th data-sort="name">姓名</th>
+            <th>性别</th>
+            <th data-sort="major">专业</th>
+            <th data-sort="dorm_room">寝室</th>
+            <th class="col-remark">备注</th>
+            <th class="col-act">操作</th>
+          </tr>
+        </thead>
+        <tbody id="rows">
+          <tr><td colspan="7" class="empty">加载中…</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="pager">
+      <span id="pager-info" class="pager-info"></span>
+      <div class="pager-btns">
+        <button class="btn ghost sm" id="prev" type="button">上一页</button>
+        <button class="btn ghost sm" id="next" type="button">下一页</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="modal" id="modal" hidden>
+  <div class="modal-mask" data-close></div>
+  <div class="modal-box" role="dialog" aria-modal="true">
+    <div class="modal-head">
+      <h2 id="modal-title">新增学生</h2>
+      <button class="x" type="button" data-close aria-label="关闭">&times;</button>
+    </div>
+    <form id="form" class="form">
+      <div class="grid2">
+        <label class="field"><span>学号 *</span><input id="f-no" required maxlength="20" pattern="[A-Za-z0-9]+"></label>
+        <label class="field"><span>姓名 *</span><input id="f-name" required maxlength="50"></label>
+        <label class="field"><span>性别</span>
+          <select id="f-gender"><option value="">未填</option><option>男</option><option>女</option><option>其他</option></select>
+        </label>
+        <label class="field"><span>专业</span><input id="f-major" maxlength="50" placeholder="如 人工智能"></label>
+        <label class="field"><span>寝室</span><input id="f-dorm" maxlength="20" placeholder="如 学15楼120"></label>
+        <label class="field"><span>手机</span><input id="f-phone" maxlength="20"></label>
+        <label class="field"><span>邮箱</span><input id="f-email" type="email" maxlength="100"></label>
+        <label class="field full"><span>备注</span><input id="f-remark" maxlength="200"></label>
+      </div>
+      <p class="err" id="form-err" hidden></p>
+      <div class="modal-foot">
+        <button class="btn ghost" type="button" data-close>取消</button>
+        <button class="btn primary" type="submit">保存</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="{{ url_for('static', filename='app.js') }}?v=3"></script>
+</body>
+</html>

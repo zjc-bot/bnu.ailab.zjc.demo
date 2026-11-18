@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>成员列表 · BNU AI Lab</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=4">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-left">
+    <div class="mark">B</div>
+    <div>
+      <h1>管理后台</h1>
+      <p class="sub">{{ aname }}</p>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <nav class="admin-nav">
+      <a href="{{ url_for('admin.dash') }}">仪表盘</a>
+      <a href="{{ url_for('admin.users') }}" class="on">成员</a>
+      <a href="{{ url_for('admin.logs') }}">访问日志</a>
+      <a href="{{ url_for('admin.account') }}">账号</a>
+    </nav>
+    <form method="post" action="{{ url_for('admin.logout') }}">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="btn ghost sm2" type="submit">退出</button>
+    </form>
+  </div>
+</header>
+
+<main class="wrap-wide">
+
+  {% if ok %}<div class="ok-msg">{{ ok }}</div>{% endif %}
+  {% if err %}<div class="err">{{ err }}</div>{% endif %}
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>注册成员</h2>
+      <span style="font-size:12.5px;color:var(--muted);">共 {{ total }} 人</span>
+    </div>
+
+    <form method="get" action="{{ url_for('admin.users') }}" class="toolbar-line" style="margin-bottom:14px;">
+      <input type="search" name="q" value="{{ kw }}" placeholder="搜索学号 / 姓名 / 昵称 / 邮箱" maxlength="50">
+      <button class="btn primary sm2" type="submit">搜索</button>
+      {% if kw %}
+      <a class="btn ghost sm2" href="{{ url_for('admin.users') }}">清除</a>
+      {% endif %}
+      <a class="btn ghost sm2" href="{{ url_for('admin.export_csv') }}">导出 CSV</a>
+    </form>
+
+    <div style="overflow-x:auto;">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>学号</th>
+            <th>姓名</th>
+            <th>昵称</th>
+            <th>邮箱</th>
+            <th>专业</th>
+            <th>寝室</th>
+            <th>性别</th>
+            <th>注册时间</th>
+            <th>最近登录</th>
+            <th>API</th>
+            <th>状态</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if rows %}
+            {% for r in rows %}
+            <tr>
+              <td class="mono">{{ r.student_no }}</td>
+              <td>{{ r.real_name }}</td>
+              <td>{{ r.nickname }}</td>
+              <td>{{ r.email }}</td>
+              <td>{{ r.major or '—' }}</td>
+              <td>{{ r.dorm_room or '—' }}</td>
+              <td>{{ r.gender or '—' }}</td>
+              <td>{{ r.created_at.strftime('%m-%d %H:%M') if r.created_at else '—' }}</td>
+              <td>{{ r.last_login_at.strftime('%m-%d %H:%M') if r.last_login_at else '未登录' }}</td>
+              <td>
+                {% if r.api_hint %}
+                  <span class="badge">自带</span>
+                {% else %}
+                  <span style="color:var(--faint);font-size:12px;">系统</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if r.status == 'active' %}
+                  <span class="badge">正常</span>
+                {% else %}
+                  <span class="badge-off">已停用</span>
+                {% endif %}
+              </td>
+              <td>
+                <div class="row-actions">
+                  <form method="post" action="{{ url_for('admin.reset_user_password', uid=r.id) }}"
+                        data-confirm="向 {{ r.email }} 发送重置密码链接？">
+                    <input type="hidden" name="csrf" value="{{ csrf }}">
+                    <button class="btn ghost sm2" type="submit">重置密码</button>
+                  </form>
+                  <form method="post" action="{{ url_for('admin.toggle_user_status', uid=r.id) }}"
+                        data-confirm="确认{{ '停用' if r.status == 'active' else '启用' }}该账号？">
+                    <input type="hidden" name="csrf" value="{{ csrf }}">
+                    <button class="btn ghost sm2" type="submit">
+                      {{ '停用' if r.status == 'active' else '启用' }}
+                    </button>
+                  </form>
+                  <form method="post" action="{{ url_for('admin.delete_user', uid=r.id) }}"
+                        data-confirm="彻底删除 {{ r.real_name }}（{{ r.student_no }}）？此操作不可恢复，将同时清除其登录记录、验证码与上传的形象。">
+                    <input type="hidden" name="csrf" value="{{ csrf }}">
+                    <button class="btn danger sm2" type="submit">删除</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr><td colspan="12" class="empty-row">没有匹配的成员</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="page-nav">
+      <span>第 {{ page }} / {{ pages }} 页</span>
+      <div style="display:flex;gap:8px;">
+        {% if page > 1 %}
+        <a class="btn ghost sm2" href="{{ url_for('admin.users', page=page-1, q=kw) }}">上一页</a>
+        {% endif %}
+        {% if page < pages %}
+        <a class="btn ghost sm2" href="{{ url_for('admin.users', page=page+1, q=kw) }}">下一页</a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+</main>
+<script src="{{ url_for('static', filename='app.js') }}?v=4"></script>
+</body>
+</html>

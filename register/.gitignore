@@ -1,0 +1,26 @@
+# 凭据与运行期数据，绝不入库
+.env
+.env.*
+!.env.example
+
+# 用户上传的形象
+var/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 生成物与日志
+*.log
+
+# 编辑器
+.vscode/
+.idea/
+.DS_Store
+
+# 部署临时产物
+deploy/*.log
+deploy/*.tar.gz

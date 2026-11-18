@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>登录 · BNU AI Lab</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=4">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-left">
+    <div class="mark">B</div>
+    <div>
+      <h1>BNU AI Lab</h1>
+      <p class="sub">成员登录</p>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <a href="{{ url_for('register') }}" class="btn ghost" style="padding:7px 14px;font-size:13px;">注册</a>
+  </div>
+</header>
+
+<main class="wrap-narrow">
+  <div class="page-head">
+    <h1>欢迎回来</h1>
+    <p>使用校内邮箱或学号登录。</p>
+  </div>
+
+  <div class="card">
+    {% if err %}<div class="err">{{ err }}</div>{% endif %}
+
+    <form method="post" action="{{ url_for('login_submit') }}" autocomplete="off">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+
+      <label class="field">
+        <span>邮箱或学号</span>
+        <input name="login" required maxlength="100" autofocus
+               placeholder="xxx@mail.bnu.edu.cn 或 202611081065">
+      </label>
+
+      <label class="field">
+        <span>密码</span>
+        <input name="password" type="password" required maxlength="64"
+               autocomplete="current-password">
+      </label>
+
+      <button class="btn primary block" type="submit">登录</button>
+    </form>
+  </div>
+
+  <p class="center-note">还没有账号？<a href="{{ url_for('register') }}">立即注册</a></p>
+</main>
+</body>
+</html>

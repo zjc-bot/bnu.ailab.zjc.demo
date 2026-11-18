@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>仪表盘 · BNU AI Lab</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=4">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-left">
+    <div class="mark">B</div>
+    <div>
+      <h1>管理后台</h1>
+      <p class="sub">{{ aname }}</p>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <nav class="admin-nav">
+      <a href="{{ url_for('admin.dash') }}" class="on">仪表盘</a>
+      <a href="{{ url_for('admin.users') }}">成员</a>
+      <a href="{{ url_for('admin.logs') }}">访问日志</a>
+      <a href="{{ url_for('admin.account') }}">账号</a>
+    </nav>
+    <form method="post" action="{{ url_for('admin.logout') }}">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="btn ghost sm2" type="submit">退出</button>
+    </form>
+  </div>
+</header>
+
+<main class="wrap-wide">
+
+  <div class="range-bar">
+    <div class="range-presets">
+      {% for p in presets %}
+      <a class="range-btn {% if p.days == active_days %}on{% endif %}"
+         href="?from={{ p.from }}&to={{ p.to }}">{{ p.label }}</a>
+      {% endfor %}
+    </div>
+    <form class="range-custom" method="get" action="{{ url_for('admin.dash') }}">
+      <input type="date" name="from" value="{{ d_from }}"
+             min="{{ min_iso }}" max="{{ today_iso }}" aria-label="开始日期">
+      <span class="range-sep">至</span>
+      <input type="date" name="to" value="{{ d_to }}"
+             min="{{ min_iso }}" max="{{ today_iso }}" aria-label="结束日期">
+      <button class="btn primary sm2" type="submit">应用</button>
+    </form>
+    <span class="range-hint">最多 30 天</span>
+  </div>
+
+  <div class="kpi-grid">
+    <div class="kpi">
+      <span class="kpi-label">注册总数</span>
+      <strong class="kpi-value">{{ s.total }}</strong>
+    </div>
+    <div class="kpi">
+      <span class="kpi-label">今日新增</span>
+      <strong class="kpi-value">{{ s.today }}</strong>
+    </div>
+    <div class="kpi">
+      <span class="kpi-label">区间独立 IP</span>
+      <strong class="kpi-value">{{ s.uv }}</strong>
+    </div>
+    <div class="kpi">
+      <span class="kpi-label">区间访问量</span>
+      <strong class="kpi-value">{{ s.pv }}</strong>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>AI 使用情况</h2>
+      <span class="panel-note">按自然日统计</span>
+    </div>
+    <div class="ai-stat">
+      <div><b>{{ s.ai_today }}</b><span>今日对话次数</span></div>
+      <div><b>{{ s.ai_total }}</b><span>累计对话次数</span></div>
+      <div><b>{{ s.ai_people }}</b><span>用过对话的人</span></div>
+      <div><b>{{ s.byok }}</b><span>自带 API Key</span></div>
+    </div>
+    <p class="chart-note">
+      自带 Key 的用户消耗自己的额度，不计入实验室配额；其余用户共用每日上限。
+    </p>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>访问时段分布</h2>
+      <span class="panel-note">
+        {{ s.span.from }} 至 {{ s.span.to }} · 区间访问 {{ s.pv }} 次 · 独立 IP {{ s.uv }} 个
+      </span>
+    </div>
+    <div class="chart-box"
+         data-chart="{{ {'labels': s.hours|map(attribute='h')|map('string')|list,
+                          'values': s.hours|map(attribute='c')|list,
+                          'unit': ' 次', 'color': '#2563eb', 'height': 200,
+                          'area': true, 'title': '各小时访问量'}|tojson|forceescape }}">
+    </div>
+    <p class="chart-note">横轴 0–23 时。鼠标沿图面移动即可查看每个时段的具体数值。</p>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>注册趋势</h2>
+      <span class="panel-note">{{ s.span.from }} 至 {{ s.span.to }} · 区间新增 {{ s.week }} 人</span>
+    </div>
+    {% if s.trend %}
+    <div class="chart-box"
+         data-chart="{{ {'labels': s.trend|map(attribute='d')|list,
+                          'values': s.trend|map(attribute='c')|list,
+                          'unit': ' 人', 'color': '#059669', 'height': 210,
+                          'area': true, 'title': '注册人数趋势'}|tojson|forceescape }}">
+    </div>
+    <p class="chart-note">鼠标沿时间轴滑动，虚线会吸附到最近的一天并显示当日人数。</p>
+    {% else %}
+    <p class="chart-empty">暂无注册数据</p>
+    {% endif %}
+  </div>
+
+  <div class="panel">
+    <h2>专业分布</h2>
+    {% if s.by_major %}
+      {% set mmax = (s.by_major | map(attribute='c') | max) or 1 %}
+      {% for m in s.by_major %}
+      <div class="bar-row">
+        <span class="bar-label">{{ m.major }}</span>
+        <div class="bar-track"><div class="bar-fill" style="width: {{ (m.c / mmax * 100)|round(1) }}%;"></div></div>
+        <span class="bar-num">{{ m.c }}</span>
+      </div>
+      {% endfor %}
+    {% else %}
+      <p class="empty-row">暂无数据</p>
+    {% endif %}
+  </div>
+
+  <div class="panel">
+    <h2>寝室分布（前 12）</h2>
+    {% if s.by_dorm %}
+      {% set dmax = (s.by_dorm | map(attribute='c') | max) or 1 %}
+      {% for d in s.by_dorm %}
+      <div class="bar-row">
+        <span class="bar-label">{{ d.dorm }}</span>
+        <div class="bar-track"><div class="bar-fill" style="width: {{ (d.c / dmax * 100)|round(1) }}%;"></div></div>
+        <span class="bar-num">{{ d.c }}</span>
+      </div>
+      {% endfor %}
+    {% else %}
+      <p class="empty-row">暂无数据</p>
+    {% endif %}
+  </div>
+
+  <div class="panel">
+    <h2>热门路径</h2>
+    {% if s.hot_paths %}
+      {% set pmax = (s.hot_paths | map(attribute='c') | max) or 1 %}
+      {% for p in s.hot_paths %}
+      <div class="bar-row">
+        <span class="bar-label mono">{{ p.path }}</span>
+        <div class="bar-track"><div class="bar-fill" style="width: {{ (p.c / pmax * 100)|round(1) }}%;"></div></div>
+        <span class="bar-num">{{ p.c }}</span>
+      </div>
+      {% endfor %}
+    {% else %}
+      <p class="empty-row">暂无访问记录</p>
+    {% endif %}
+  </div>
+
+</main>
+<script src="{{ url_for('static', filename='chart.js') }}?v=1"></script>
+</body>
+</html>

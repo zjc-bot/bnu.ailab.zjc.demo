@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>访问日志 · BNU AI Lab</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=4">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-left">
+    <div class="mark">B</div>
+    <div>
+      <h1>管理后台</h1>
+      <p class="sub">{{ aname }}</p>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <nav class="admin-nav">
+      <a href="{{ url_for('admin.dash') }}">仪表盘</a>
+      <a href="{{ url_for('admin.users') }}">成员</a>
+      <a href="{{ url_for('admin.logs') }}" class="on">访问日志</a>
+      <a href="{{ url_for('admin.account') }}">账号</a>
+    </nav>
+    <form method="post" action="{{ url_for('admin.logout') }}">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="btn ghost sm2" type="submit">退出</button>
+    </form>
+  </div>
+</header>
+
+<main class="wrap-wide">
+
+  <div class="panel">
+    <h2>访问最多的 IP</h2>
+    {% if top_ips %}
+      {% set imax = (top_ips | map(attribute='c') | max) or 1 %}
+      {% for t in top_ips %}
+      <div class="bar-row">
+        <span class="bar-label mono">{{ t.ip }}</span>
+        <div class="bar-track"><div class="bar-fill" style="width: {{ (t.c / imax * 100)|round(1) }}%;"></div></div>
+        <span class="bar-num">{{ t.c }}</span>
+      </div>
+      {% endfor %}
+    {% else %}
+      <p class="empty-row">暂无访问记录</p>
+    {% endif %}
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>访问明细</h2>
+      <span style="font-size:12.5px;color:var(--muted);">共 {{ total }} 条</span>
+    </div>
+
+    <div style="overflow-x:auto;">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>时间</th>
+            <th>IP</th>
+            <th>方法</th>
+            <th>路径</th>
+            <th>状态</th>
+            <th>User-Agent</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if rows %}
+            {% for r in rows %}
+            <tr>
+              <td>{{ r.created_at.strftime('%m-%d %H:%M:%S') if r.created_at else '—' }}</td>
+              <td class="mono">{{ r.ip }}</td>
+              <td>{{ r.method }}</td>
+              <td>{{ r.path }}</td>
+              <td>{{ r.status }}</td>
+              <td style="max-width:320px;overflow:hidden;text-overflow:ellipsis;
+                         white-space:nowrap;color:var(--muted);font-size:12px;"
+                  title="{{ r.ua or '' }}">{{ r.ua or '—' }}</td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr><td colspan="6" class="empty-row">暂无记录</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="page-nav">
+      <span>第 {{ page }} / {{ pages }} 页</span>
+      <div style="display:flex;gap:8px;">
+        {% if page > 1 %}
+        <a class="btn ghost sm2" href="{{ url_for('admin.logs', page=page-1) }}">上一页</a>
+        {% endif %}
+        {% if page < pages %}
+        <a class="btn ghost sm2" href="{{ url_for('admin.logs', page=page+1) }}">下一页</a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+</main>
+</body>
+</html>

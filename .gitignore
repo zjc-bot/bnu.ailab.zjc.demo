@@ -1,0 +1,37 @@
+# ===== 凭据与密钥（绝不入库）=====
+*.pem
+*.key
+*.pub
+id_rsa
+id_rsa.*
+backup/*key*
+backup/*.bak
+.env
+.env.*
+*.env
+
+# ===== 真实数据（PII）=====
+*.csv
+sql/import_students.sql
+backup/students_raw.csv
+
+# ===== 工作记忆与项目元数据（不入库）=====
+.workbuddy/
+
+# ===== Python 运行产物 =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# ===== 日志与临时文件 =====
+*.log
+*.tmp
+*.swp
+.DS_Store
+Thumbs.db
+
+# ===== 图片素材备份（大文件，归档用）=====
+backup/pet-removal-*/

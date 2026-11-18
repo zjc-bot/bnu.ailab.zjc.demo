@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="csrf" content="{{ csrf }}">
+<title>消息 · BNU AI Lab</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=8">
+<link rel="stylesheet" href="{{ url_for('static', filename='im.css') }}?v=3">
+</head>
+<body class="im-page">
+
+<header class="topbar">
+  <div class="topbar-left">
+    <div class="mark">B</div>
+    <div>
+      <h1>BNU AI Lab</h1>
+      <p class="sub">消息</p>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <nav class="admin-nav">
+      <a href="{{ url_for('home') }}" class="on">消息</a>
+      <a href="{{ url_for('profile') }}">账号</a>
+    </nav>
+    <form method="post" action="{{ url_for('logout') }}">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="btn ghost sm2" type="submit">退出</button>
+    </form>
+  </div>
+</header>
+
+<main class="im">
+
+  <aside class="im-side">
+    <div class="im-side-top">
+      <span class="im-side-title">消息</span>
+      <button class="im-add" id="btnAdd" type="button" title="添加好友" aria-label="添加好友">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+          <path d="M12 5v14M5 12h14"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="im-tabs" role="tablist">
+      <button class="im-tab on" type="button" data-tab="chats" role="tab">会话</button>
+      <button class="im-tab" type="button" data-tab="friends" role="tab">
+        好友 <span class="im-badge" id="reqBadge" hidden>0</span>
+      </button>
+    </div>
+
+    <div class="im-list" id="imList">
+      <p class="im-none">加载中…</p>
+    </div>
+
+  </aside>
+
+  <section class="im-main">
+
+    <div class="im-blank" id="imBlank">
+      <div class="im-blank-ico">
+        <svg width="46" height="46" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+          <path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-4-.9L3 21l1.9-4.5A8.4 8.4 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5z"/>
+        </svg>
+      </div>
+      <p>选择左侧的联系人开始聊天</p>
+      <button class="btn ghost sm2" id="btnAdd2" type="button">添加好友</button>
+    </div>
+
+    <div class="im-chat" id="imChat" hidden>
+      <div class="im-head">
+        <div class="im-head-av" id="headAv"></div>
+        <div class="im-head-txt">
+          <div class="im-head-name" id="headName">—</div>
+          <div class="im-head-sub" id="headSub"></div>
+        </div>
+        <button class="im-head-more" id="btnRemove" type="button" title="删除好友">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="im-body" id="imBody"></div>
+
+      <div class="im-foot">
+        <textarea id="imInput" rows="1" maxlength="2000"
+                  placeholder="输入消息，Enter 发送"></textarea>
+        <button class="btn primary" id="imSend" type="button">发送</button>
+      </div>
+    </div>
+
+  </section>
+
+</main>
+
+<!-- 添加好友 -->
+<div class="im-modal" id="addModal" hidden>
+  <div class="im-modal-mask" data-close></div>
+  <div class="im-modal-box">
+    <div class="im-modal-head">
+      <h3>添加好友</h3>
+      <button class="im-x" type="button" data-close aria-label="关闭">&times;</button>
+    </div>
+
+    <div class="im-modal-body">
+      <label class="im-field">
+        <span>对方学号</span>
+        <div class="im-search-row">
+          <input id="searchNo" type="text" maxlength="20" inputmode="numeric"
+                 placeholder="如 202611081065" autocomplete="off">
+          <button class="btn ghost sm2" id="searchBtn" type="button">查找</button>
+        </div>
+      </label>
+
+      <div id="searchResult" class="im-result" hidden></div>
+
+      <label class="im-field" id="noteField" hidden>
+        <span>验证消息（可选）</span>
+        <input id="reqNote" type="text" maxlength="100" placeholder="我是…">
+      </label>
+
+      <p class="im-hint" id="addHint"></p>
+    </div>
+
+    <div class="im-modal-foot">
+      <button class="btn ghost" type="button" data-close>取消</button>
+      <button class="btn primary" id="sendReq" type="button" disabled>发送申请</button>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='im.js') }}?v=3"></script>
+</body>
+</html>

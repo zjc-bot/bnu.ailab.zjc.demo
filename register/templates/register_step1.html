@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>身份核验 · BNU AI Lab</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=4">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-left">
+    <div class="mark">B</div>
+    <div>
+      <h1>BNU AI Lab</h1>
+      <p class="sub">26 级成员注册</p>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <a href="{{ url_for('login_page') }}" class="btn ghost" style="padding:7px 14px;font-size:13px;">登录</a>
+  </div>
+</header>
+
+<main class="wrap-narrow">
+
+  <ol class="steps">
+    <li class="active"><span>1</span>身份核验</li>
+    <li><span>2</span>填写资料</li>
+    <li><span>3</span>验证邮箱</li>
+  </ol>
+
+  <div class="page-head">
+    <h1>确认你的身份</h1>
+    <p>请输入学号与真实姓名，系统会与 26 级在册名单比对。</p>
+  </div>
+
+  <div class="card">
+    {% if err %}<div class="err">{{ err }}</div>{% endif %}
+
+    <form method="post" action="{{ url_for('register_step1') }}" autocomplete="off">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+
+      <label class="field">
+        <span>学号 <span class="req">*</span></span>
+        <input name="student_no" value="{{ form.student_no or '' }}" required
+               maxlength="20" pattern="[A-Za-z0-9]{6,20}" placeholder="如 202611081065">
+      </label>
+
+      <label class="field">
+        <span>真实姓名 <span class="req">*</span></span>
+        <input name="real_name" value="{{ form.real_name or '' }}" required maxlength="50"
+               placeholder="与学籍一致">
+      </label>
+
+      <label class="field">
+        <span>图形验证码 <span class="req">*</span></span>
+        <div class="captcha-row">
+          <input name="captcha" required maxlength="4" placeholder="不区分大小写"
+                 autocomplete="off">
+          <img class="captcha-img" id="cap" src="{{ url_for('captcha_png') }}"
+               alt="点击刷新验证码" title="点击刷新">
+        </div>
+      </label>
+
+      <button class="btn primary block" type="submit">核验身份</button>
+    </form>
+
+    <p class="hint" style="text-align:center;margin-top:14px;">
+      学号与姓名必须同时匹配名单，任一不符都无法通过。
+    </p>
+  </div>
+
+  <p class="center-note">已有账号？<a href="{{ url_for('login_page') }}">直接登录</a></p>
+</main>
+
+<script src="{{ url_for('static', filename='app.js') }}?v=4"></script>
+</body>
+</html>

@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>填写资料 · BNU AI Lab</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=4">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-left">
+    <div class="mark">B</div>
+    <div>
+      <h1>BNU AI Lab</h1>
+      <p class="sub">26 级成员注册</p>
+    </div>
+  </div>
+</header>
+
+<main class="wrap-narrow">
+
+  <ol class="steps">
+    <li class="done"><span>✓</span>身份核验</li>
+    <li class="active"><span>2</span>填写资料</li>
+    <li><span>3</span>验证邮箱</li>
+  </ol>
+
+  <div class="card" style="margin-bottom:16px;background:#ecfdf5;border-color:#a7f3d0;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span style="width:22px;height:22px;flex:none;display:grid;place-items:center;
+        border-radius:50%;background:#059669;color:#fff;font-size:13px;font-weight:700;">✓</span>
+      <div>
+        <strong style="color:#065f46;font-size:14px;">
+          身份核验通过：{{ ident.real_name }}
+        </strong>
+        <p style="color:#047857;font-size:12.5px;margin-top:2px;">
+          <span class="mono">{{ ident.student_no }}</span>
+          {% if ident.major %} · {{ ident.major }}{% endif %}
+          {% if ident.dorm_room %} · {{ ident.dorm_room }}{% endif %}
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-head">
+    <h1>设置你的账号</h1>
+    <p>姓名与学号已锁定，不可修改。以下信息用于登录与通知。</p>
+  </div>
+
+  <div class="card">
+    {% if err %}<div class="err">{{ err }}</div>{% endif %}
+
+    <form method="post" action="{{ url_for('register_step2_submit') }}" autocomplete="off">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+
+      <div class="grid2">
+        <label class="field">
+          <span>平台昵称 <span class="req">*</span></span>
+          <input name="nickname" value="{{ form.nickname or '' }}" required maxlength="20"
+                 placeholder="2–20 位">
+        </label>
+        <label class="field">
+          <span>北师大邮箱 <span class="req">*</span></span>
+          <input name="email" type="email" value="{{ form.email or '' }}" required
+                 maxlength="100" placeholder="xxx@mail.bnu.edu.cn">
+        </label>
+        <label class="field">
+          <span>密码 <span class="req">*</span></span>
+          <input name="password" type="password" required minlength="8" maxlength="64"
+                 placeholder="至少 8 位，含字母和数字">
+        </label>
+        <label class="field">
+          <span>确认密码 <span class="req">*</span></span>
+          <input name="password2" type="password" required minlength="8" maxlength="64"
+                 placeholder="再输入一次">
+        </label>
+      </div>
+
+      <div class="agree-row">
+        <input type="checkbox" id="agree" name="agree" value="1">
+        <label for="agree">
+          我已阅读并同意 <a href="{{ url_for('privacy') }}" target="_blank" rel="noopener">《隐私条款》</a>，
+          同意为注册与身份核验之目的处理我的学号、姓名与校内邮箱。
+        </label>
+      </div>
+
+      <button class="btn primary block" type="submit">发送邮箱验证码</button>
+    </form>
+  </div>
+
+  <p class="center-note"><a href="{{ url_for('register') }}">← 返回修改学号/姓名</a></p>
+</main>
+</body>
+</html>

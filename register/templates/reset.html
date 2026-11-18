@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>重置密码 · BNU AI Lab</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=4">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-left">
+    <div class="mark">B</div>
+    <div>
+      <h1>BNU AI Lab</h1>
+      <p class="sub">重置密码</p>
+    </div>
+  </div>
+</header>
+
+<main class="wrap-narrow">
+  <div class="page-head">
+    <h1>设置新密码</h1>
+    <p>正在为 <strong>{{ nickname }}</strong> 重置登录密码。</p>
+  </div>
+
+  <div class="card">
+    {% if err %}<div class="err">{{ err }}</div>{% endif %}
+
+    <form method="post" action="{{ url_for('reset_submit') }}" autocomplete="off">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="token" value="{{ token }}">
+
+      <label class="field">
+        <span>新密码 <span class="req">*</span></span>
+        <input name="password" type="password" required minlength="8" maxlength="64"
+               autofocus placeholder="至少 8 位，含字母和数字">
+      </label>
+
+      <label class="field">
+        <span>确认新密码 <span class="req">*</span></span>
+        <input name="password2" type="password" required minlength="8" maxlength="64"
+               placeholder="再输入一次">
+      </label>
+
+      <button class="btn primary block" type="submit">保存新密码</button>
+    </form>
+
+    <p class="hint" style="text-align:center;margin-top:14px;">
+      保存后需使用新密码重新登录。此链接仅可使用一次。
+    </p>
+  </div>
+</main>
+</body>
+</html>

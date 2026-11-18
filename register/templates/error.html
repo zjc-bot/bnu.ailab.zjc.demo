@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ code }} · BNU AI Lab</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=4">
+</head>
+<body>
+<main class="wrap-narrow" style="padding-top:80px;text-align:center;">
+  <h1 style="font-size:44px;color:var(--faint);margin-bottom:8px;">{{ code }}</h1>
+  <p style="color:var(--muted);margin-bottom:26px;">{{ msg }}</p>
+  <a class="btn ghost" href="{{ url_for('index') }}">返回首页</a>
+</main>
+</body>
+</html>

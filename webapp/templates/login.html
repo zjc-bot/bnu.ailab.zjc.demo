@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>登录 · 学生信息管理</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="auth-body">
+<main class="auth-card">
+  <div class="brand">
+    <div class="brand-mark">S</div>
+    <div class="brand-text">
+      <h1>学生信息管理</h1>
+      <p>Student Registry</p>
+    </div>
+  </div>
+
+  <form method="post" action="{{ url_for('login_submit') }}" autocomplete="off">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+
+    <label class="field">
+      <span>用户名</span>
+      <input name="user" required maxlength="64" autocomplete="username" autofocus>
+    </label>
+
+    <label class="field">
+      <span>密码</span>
+      <input type="password" name="pass" required maxlength="128" autocomplete="current-password">
+    </label>
+
+    {% if err %}<p class="err">{{ err }}</p>{% endif %}
+
+    <button class="btn primary" type="submit">登录</button>
+  </form>
+
+  <p class="hint">仅限授权人员访问 · 登录行为将被记录</p>
+</main>
+</body>
+</html>

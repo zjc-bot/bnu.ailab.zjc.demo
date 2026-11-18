@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>账号管理 · BNU AI Lab</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=4">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-left">
+    <div class="mark">B</div>
+    <div>
+      <h1>管理后台</h1>
+      <p class="sub">{{ aname }}</p>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <nav class="admin-nav">
+      <a href="{{ url_for('admin.dash') }}">仪表盘</a>
+      <a href="{{ url_for('admin.users') }}">成员</a>
+      <a href="{{ url_for('admin.logs') }}">访问日志</a>
+      <a href="{{ url_for('admin.account') }}" class="on">账号</a>
+    </nav>
+    <form method="post" action="{{ url_for('admin.logout') }}">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="btn ghost sm2" type="submit">退出</button>
+    </form>
+  </div>
+</header>
+
+<main class="wrap-mid">
+
+  <div class="page-head">
+    <h1>管理员账号</h1>
+    <p>修改账号信息或密码时，都需要验证当前密码。</p>
+  </div>
+
+  {% if ok %}<div class="ok-msg">{{ ok }}</div>{% endif %}
+  {% if err %}<div class="err">{{ err }}</div>{% endif %}
+
+  <div class="panel">
+    <h2>当前账号</h2>
+    <dl class="info-list">
+      <div class="info-row"><dt>登录名</dt><dd class="mono">{{ me.username }}</dd></div>
+      <div class="info-row"><dt>显示名</dt><dd>{{ me.display_name or me.username }}</dd></div>
+      <div class="info-row"><dt>创建时间</dt><dd>{{ me.created_at }}</dd></div>
+      <div class="info-row"><dt>最近登录</dt><dd>{{ me.last_login_at or '—' }}</dd></div>
+      <div class="info-row"><dt>登录 IP</dt><dd class="mono">{{ me.last_login_ip or '—' }}</dd></div>
+    </dl>
+  </div>
+
+  <div class="panel">
+    <h2>修改账号信息</h2>
+    <form method="post" action="{{ url_for('admin.account_name') }}" autocomplete="off">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+
+      <div class="grid2">
+        <label class="field">
+          <span>登录名 <span class="req">*</span></span>
+          <input name="username" required maxlength="32" value="{{ me.username }}"
+                 pattern="[A-Za-z0-9_]{3,32}" placeholder="3–32 位字母数字下划线">
+        </label>
+        <label class="field">
+          <span>显示名</span>
+          <input name="display_name" maxlength="50" value="{{ me.display_name or '' }}"
+                 placeholder="后台顶部显示的名字">
+        </label>
+      </div>
+
+      <label class="field">
+        <span>当前密码 <span class="req">*</span></span>
+        <input name="password" type="password" required maxlength="64"
+               placeholder="修改账号信息需验证密码">
+      </label>
+
+      <button class="btn primary" type="submit">保存账号信息</button>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h2>修改登录密码</h2>
+    <form method="post" action="{{ url_for('admin.account_password') }}" autocomplete="off">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+
+      <label class="field">
+        <span>当前密码 <span class="req">*</span></span>
+        <input name="old" type="password" required maxlength="64">
+      </label>
+
+      <div class="grid2">
+        <label class="field">
+          <span>新密码 <span class="req">*</span></span>
+          <input name="new" type="password" required minlength="10" maxlength="64"
+                 placeholder="至少 10 位，含字母和数字">
+        </label>
+        <label class="field">
+          <span>确认新密码 <span class="req">*</span></span>
+          <input name="new2" type="password" required minlength="10" maxlength="64">
+        </label>
+      </div>
+
+      <button class="btn primary" type="submit">更新密码</button>
+      <p class="hint">管理员密码要求至少 10 位。修改成功后需要重新登录。</p>
+    </form>
+  </div>
+
+</main>
+</body>
+</html>
