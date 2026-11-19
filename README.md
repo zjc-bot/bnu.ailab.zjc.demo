@@ -69,7 +69,7 @@ D:/MySQL/
 │   ├── admin.py            管理后台蓝图（约 609 行）
 │   ├── schema*.sql         11 个分模块脚本（含 4 个幂等迁移）
 │   ├── games/              对战子系统：Socket.IO 事件 + 房间 + 服务端规则
-│   ├── tests/              6 个测试文件，51 项 pytest
+│   ├── tests/              7 个测试文件，75 项 pytest
 │   ├── templates/          Jinja2 模板（home.html 等）
 │   ├── static/             JS/CSS；im.js 为当前 IM 入口
 │   └── deploy/             ECS 部署脚本（全量 / 增量 / nginx 模板）
@@ -105,7 +105,9 @@ D:/MySQL/
 - **一次性新手引导**：消息页无联系人、小鲸入口、对战页、首手落子、AI 对话满 3 轮导出提示，均可跳过且用 localStorage 记录。
 - **安全运行保障**：`.env.example`、最小 CI、MySQL 无密码落盘备份脚本、幂等数据库迁移与增量部署校验。
 - **服务器增量部署（2026-11-19）**：备份 → 迁移 → 授权 → 上传 → 重启 → 验证全通过；服务 `active`、`.env` 未变、路由全通、错误日志无。凭据仅用进程环境变量，未入库。
-- SQL 注入、XSS、CSRF、会话固定、CSV 注入均已防护，安全响应头齐全；`register` 现有 **51 项 pytest**（6 个文件）全过。
+- **头像上传应用层加固（2026-11-19，选项 3）**：两处上传接口在交给 Pillow 之前先按文件头白名单（JPEG / PNG / WebP）识别真实格式、二次确认 Pillow 选中的插件、`load()` 之前限 4000 万像素；PSD / TIFF / BMP / GIF / PDF 等载荷进不了原生解析器。新增 24 项回归，累计 75 项。
+- **生产依赖同步（2026-11-19，选项 1）**：服务器已装 Pillow `12.3.0`（3.10 可用的最高版）；本轮无数据库迁移，故按增量脚本第 3–7 步做等价最小同步，跳过 DB 步骤。
+- SQL 注入、XSS、CSRF、会话固定、CSV 注入均已防护，安全响应头齐全；`register` 现有 **75 项 pytest**（7 个文件）全过。
 
 ### 进行中 / 待决策
 
@@ -119,7 +121,7 @@ D:/MySQL/
 
 - 项目按**对外产品**标准验收（稳定长跑、可恢复、可监控），不因当前规模小降级；质量门槛见总纲 §10.1。
 - 当前 HTTP 明文传输（靠 SSH 隧道加密）。公网化前必须上 HTTPS，不要录入真实个人信息。
-- CI 已在 GitHub Actions 首次实跑成功（run `44507640518`），主回归 job 通过；依赖审计 job 按设计非阻断失败，另有 Node.js 20 action 弃用警告。本地 `pytest` 51 项与 webapp 自检同步通过。
+- CI 已实跑 6 次（最新 run `44518300890` 总体 Success），主回归 job 全绿（75 项 pytest）；Node.js 20 action 弃用警告已通过升级到 node24 版 action 消除；依赖审计 job 按设计非阻断失败。本地 `pytest` 75 项与 webapp 自检同步通过。
 - 已有安全备份脚本，但**尚无定时调度、异地存储与恢复演练**；IM 每 2 秒轮询仍会写访问日志（待优化）。
 - gunicorn 单 worker；内存限流不支持多 worker 扩容。
 
@@ -152,7 +154,7 @@ D:/MySQL/
 # 本地开发（register，端口 8081）
 cd D:/MySQL/register && SECRET_KEY=xxx python app.py
 
-# 测试：register 51 项 / webapp 16 项自检（后者不连库）
+# 测试：register 75 项 / webapp 16 项自检（后者不连库）
 cd D:/MySQL/register && pytest
 python D:/MySQL/webapp/tests/selftest.py
 

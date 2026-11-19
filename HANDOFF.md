@@ -3,7 +3,7 @@
 > 目的：让协作者基于**当前真实代码**工作，而不是文档旧快照。
 > 事实来源：`git log`、实际源码、`pytest` 结果。最后核对：2026-11-19；核心功能提交 `8766e26` 已推送 `origin/main`，以 `git log -1` 和 GitHub Actions run `44507640518` 为准。
 > 架构与决策见 `PROJECT_CHARTER.md`，操作红线见 `README.md §4A/§4B`。
-> **2026-11-19 交付原则**：安全稳定是底线；五子棋 AI、离线邀请、新手引导已实现、通过 51 项测试，并完成服务器增量部署与核验；后续游戏经 hi 拍板暂缓。日常仍遵循"先本地实现与回归验证，生产变更先备份并经确认"。
+> **2026-11-19 交付原则**：安全稳定是底线；五子棋 AI、离线邀请、新手引导已实现、通过 75 项测试，并完成服务器增量部署与核验；后续游戏经 hi 拍板暂缓。日常仍遵循"先本地实现与回归验证，生产变更先备份并经确认"。
 
 ---
 
@@ -14,7 +14,7 @@
 | 旧说法 | 当前实际 |
 |---|---|
 | 早期文档写 6 / 9 / 10 个 schema | 当前为 **11 个**（含 4 个幂等迁移），deploy 的 `glob` 全量执行 |
-| 早期文档写 13 / 32 / 41 项测试 | 当前为 **51 项 pytest**（6 文件），本地全过 |
+| 早期文档写 13 / 32 / 41 项测试 | 当前为 **75 项 pytest**（7 文件），本地全过（含 24 项头像上传加固回归）|
 | Charter 说"无 WebSocket" | 已改：SSE（AI 流式）+ IM 轮询 + Socket.IO（对局，本地已实现）|
 | 无右键菜单 | 已实现引用/转发/删除/多选；且额外加了「⋯」按钮入口（右键在触摸设备和部分浏览器不可靠）|
 | SSRF、admin 白名单、headers、终局房间、认输覆盖、AI 扣费、未读误标、UA 转义、和棋、重置令牌竞态…… | 两轮审查共修 26 + 11 项，均已提交 |
@@ -52,7 +52,9 @@
 | 问题 | 证据 | 建议 |
 |---|---|---|
 | 无自动备份 | 已有 `register/deploy/backup_mysql.sh`，但无调度 | 上线前建定时 mysqldump + 异地存储 + 恢复演练 |
-| CI 审计告警 | run `44507640518` 总体 Success；审计 job 非阻断失败 | 跟进 `pip-audit` 报告与 Node.js 20 action 弃用警告，不阻断主回归 |
+| 依赖漏洞与生产解释器漂移 | 本地/CI 为 Python 3.13，**生产 venv 为 3.10.12**；Pillow 13.0.0 要求 `>=3.11`，故固定 `12.3.0` | 已改用应用层加固压缩攻击面，并在 README §1 记录版本差异；要修完剩余 36 条 Pillow 告警须先升级生产 Python，需 hi 拍板 |
+| Node.js 20 action 弃用 | 已升级到 node24 版 action（checkout v7.0.1 / setup-python v7.1.0 / setup-node v7.1.0），run `44513024675` 起警告消失 | 无需跟进 |
+| audit job 长期红 | `pip-audit` 仍有 51 条（Pillow 36 + Flask / cryptography / pytest 15），按 `continue-on-error` 不阻断 | 建议改成分级（高危才失败），避免长期红灯钝化告警 |
 | 生产同步 worker，WebSocket 退化长轮询 | `deploy.py` gthread worker | 待拍板后切 `GeventWebSocketWorker` + nginx Upgrade |
 | 服务器 SSH 密钥未轮换 | 总纲标"待 hi 拍板" | 安排轮换并更新部署脚本 |
 | DNS 重绑定仅部分缓解 | `_base_url_safe()` 校验时解析一次，`requests.post` 重新解析 | 公网化前 pin IP（自定义 adapter + Host 头 + server_hostname）|
@@ -101,7 +103,7 @@
 
 ```bash
 cd D:/MySQL
-pytest register/tests/ -q          # 应 51 passed
+pytest register/tests/ -q          # 应 75 passed
 python -m compileall -q register webapp scripts
 node --check register/static/im.js
 node --check register/static/game.js
