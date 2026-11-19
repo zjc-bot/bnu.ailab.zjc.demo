@@ -21,7 +21,9 @@
 | `neko-world-complete-starter/` | 独立的 AI companion starter（自带 README / `.env.example`） | 参考项目，勿混改 |
 | `sql/` `scripts/` `backup/` | 建表/导入脚本、ECS 运维工具、密钥与数据备份 | 支撑 |
 
-**技术栈**：Python 3.13 · Flask 3.0.3 · PyMySQL 1.1.1 · gunicorn 22.0.0（单 worker）· 阿里云 ECS · Socket.IO 4.8.1。
+**技术栈**：Python 3.13（本地 / CI）· **Python 3.10.12（生产 `/opt/bnu-register/venv`）** · Flask 3.0.3 · PyMySQL 1.1.1 · gunicorn 22.0.0（单 worker）· 阿里云 ECS · Socket.IO 4.8.1。
+
+> ⚠️ **本地/CI 与生产解释器版本不一致**：选依赖版本前必须核对生产的 `requires_python` 与 cp310 wheel 是否存在，否则会出现「CI 装得上、生产装不上」。例如 Pillow 13.0.0 要求 `>=3.11`，生产 3.10 无法安装，故 `register/requirements.txt` 固定为 `12.3.0`（3.10 可用的最高版）；详见 §4A。
 
 ### 当前安全姿态（重要）
 
