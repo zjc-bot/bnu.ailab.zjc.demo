@@ -213,8 +213,16 @@
     var all = document.querySelectorAll('.im-msg[data-mid]');
     var btnDefs = [
       ['全选', function () {
-        all.forEach(function (el) { selectedIds.add(Number(el.getAttribute('data-mid'))); });
+        // 与服务端 50 条上限对齐；DOM 消息数会随轮询累积，不能无限全选
+        var picked = 0;
+        all.forEach(function (el) {
+          if (picked >= 50) return;
+          var id = Number(el.getAttribute('data-mid'));
+          if (!selectedIds.has(id)) { selectedIds.add(id); picked++; }
+          else picked++;
+        });
         syncChecks(); renderMultiBar();
+        if (all.length > 50) toast('已选满 50 条，更多消息请分批操作');
       }],
       ['取消', function () { selectedIds.clear(); syncChecks(); renderMultiBar(); }],
       ['转发', function () { openForward(Array.from(selectedIds)); }],

@@ -47,7 +47,7 @@
 
 ---
 
-## 2. 现状基线（已核实，2026-11-18）
+## 2. 现状基线（已核实，2026-11-19）
 
 | 项 | 事实 |
 |---|---|
@@ -55,10 +55,10 @@
 | 框架 | Flask 3.0.3 + gunicorn 22.0.0（单 worker） |
 | 数据库驱动 | PyMySQL 1.1.1，全部参数化查询 |
 | 其他依赖 | cryptography 42.0.8、Pillow 10.4.0、requests 2.31+ |
-| register 规模 | app.py 1192 行、db.py 750 行、admin.py 590 行（2026-11-18 复核） |
-| 数据库脚本 | schema.sql / schema_admin / schema_security / schema_ai / schema_byok / schema_chat（6 个） |
-| 实时通道 | SSE（AI 流式输出，正常在用）；IM 采用 2 秒轮询；**无 WebSocket** |
-| 版本控制 | git 仓库已初始化（2026-11-18，首次提交 `476e4a6`），无 CI；register 已有 13 项游戏单测 |
+| register 规模 | app.py 1494 行、db.py 880 行、admin.py 609 行（2026-11-19 复核） |
+| 数据库脚本 | 10 个 `schema*.sql`，含 3 个幂等迁移（avatar / chat / message_v2），由 deploy 的 `glob` 全部执行 |
+| 实时通道 | SSE（AI 流式输出，在用）· IM 2 秒轮询 · Socket.IO 本地已实现（对局；生产同步 worker 下退化为长轮询）|
+| 版本控制 | git 仓库已初始化（首次提交 `476e4a6`），无 CI；register 41 项 pytest（4 文件，单元 + Socket.IO 集成）|
 | 访问方式 | SSH 隧道：`打开学生管理.bat` → 8080，`打开注册系统.bat` → 8082 |
 | 安全基线 | SQL 注入、XSS、CSRF、会话固定、CSV 注入均已防护；响应头齐全 |
 

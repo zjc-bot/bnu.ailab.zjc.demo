@@ -46,6 +46,24 @@ sftp.close()
 print(" ", run(f"mysql -uroot -p'{MYSQL_PW}' < /tmp/game_schema.sql 2>&1 | grep -v Warning; rm -f /tmp/game_schema.sql") or "OK")
 print("  确认:", mysql("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='school' AND table_name='game_record'"))
 
+print("\n=== 1b. 消息交互 v2 加列（幂等，必须先于代码上传）===")
+# 新 db.py 的 SELECT 含 quote_id / deleted_by_a / deleted_by_b / forward_from。
+# 若只传代码不迁移，消息页会直接 500（Unknown column）。
+# 全量 deploy.py 会重置 SECRET_KEY（BYOK Key 报废），故增量链路必须自带迁移。
+sftp = c.open_sftp()
+sftp.put(os.path.join(LOCAL, "schema_message_v2.sql"), "/tmp/message_v2.sql")
+sftp.close()
+print(" ", run(f"mysql -uroot -p'{MYSQL_PW}' < /tmp/message_v2.sql 2>&1 | grep -v Warning; rm -f /tmp/message_v2.sql") or "OK")
+cols = mysql(
+    "SELECT GROUP_CONCAT(COLUMN_NAME) FROM information_schema.COLUMNS "
+    "WHERE TABLE_SCHEMA='school' AND TABLE_NAME='message' "
+    "AND COLUMN_NAME IN ('quote_id','deleted_by_a','deleted_by_b','forward_from')"
+)
+print("  已加列:", cols)
+if not all(name in (cols or '') for name in
+           ('quote_id', 'deleted_by_a', 'deleted_by_b', 'forward_from')):
+    raise SystemExit("消息表 4 列未就绪，中止部署（避免上传代码后消息页 500）")
+
 print("\n=== 2. 授权 app_user 对 game_record ===")
 mysql("GRANT SELECT, INSERT, UPDATE, DELETE ON school.game_record TO 'studentapp'@'127.0.0.1'")
 mysql("FLUSH PRIVILEGES")

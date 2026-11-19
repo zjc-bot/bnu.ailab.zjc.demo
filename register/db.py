@@ -700,10 +700,11 @@ def list_conversations(user_id):
     sql = """
     SELECT c.id, c.last_at, c.user_b AS peer_id,
            u.nickname, u.real_name, u.student_no, u.avatar_url,
-           (SELECT content FROM message m WHERE m.conv_id=c.id
+           (SELECT content FROM message m WHERE m.conv_id=c.id AND m.deleted_by_a=0
             ORDER BY m.id DESC LIMIT 1) AS last_text,
            (SELECT COUNT(*) FROM message m
-            WHERE m.conv_id=c.id AND m.read_at IS NULL AND m.sender_id<>%s) AS unread
+            WHERE m.conv_id=c.id AND m.read_at IS NULL AND m.sender_id<>%s
+              AND m.deleted_by_a=0) AS unread
     FROM conversation c
     JOIN app_user u ON u.id = c.user_b
     WHERE c.user_a = %s
@@ -712,10 +713,11 @@ def list_conversations(user_id):
 
     SELECT c.id, c.last_at, c.user_a AS peer_id,
            u.nickname, u.real_name, u.student_no, u.avatar_url,
-           (SELECT content FROM message m WHERE m.conv_id=c.id
+           (SELECT content FROM message m WHERE m.conv_id=c.id AND m.deleted_by_b=0
             ORDER BY m.id DESC LIMIT 1) AS last_text,
            (SELECT COUNT(*) FROM message m
-            WHERE m.conv_id=c.id AND m.read_at IS NULL AND m.sender_id<>%s) AS unread
+            WHERE m.conv_id=c.id AND m.read_at IS NULL AND m.sender_id<>%s
+              AND m.deleted_by_b=0) AS unread
     FROM conversation c
     JOIN app_user u ON u.id = c.user_a
     WHERE c.user_b = %s
@@ -948,8 +950,10 @@ def total_unread(user_id):
                 "SELECT COUNT(*) AS c FROM message m "
                 "JOIN conversation c ON c.id=m.conv_id "
                 "WHERE (c.user_a=%s OR c.user_b=%s) "
-                "  AND m.sender_id<>%s AND m.read_at IS NULL",
-                (user_id, user_id, user_id),
+                "  AND m.sender_id<>%s AND m.read_at IS NULL "
+                "  AND CASE WHEN c.user_a=%s THEN m.deleted_by_a=0 "
+                "           ELSE m.deleted_by_b=0 END",
+                (user_id, user_id, user_id, user_id),
             )
             return cur.fetchone()["c"]
 
