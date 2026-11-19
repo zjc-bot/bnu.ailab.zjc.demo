@@ -398,6 +398,12 @@ def delete_user(uid):
 
     with db.connect() as conn:
         with conn.cursor() as cur:
+            # 对局归档引用 conv_id，须在会话删除前清理
+            cur.execute(
+                "DELETE FROM game_record WHERE conv_id IN "
+                "(SELECT id FROM conversation WHERE user_a=%s OR user_b=%s)",
+                (uid, uid),
+            )
             # 通讯数据：先删消息再删会话，否则留下孤儿记录
             cur.execute(
                 "DELETE FROM message WHERE conv_id IN "

@@ -11,13 +11,16 @@
 
 import hmac
 import io
+import ipaddress
 import json
 import mimetypes
 import os
 import re
 import secrets
+import socket
 import time
 from functools import wraps
+from urllib.parse import urlparse
 
 # 老版本 Python 的 mimetypes 表里没有 webp，显式注册
 mimetypes.add_type("image/webp", ".webp")
@@ -108,7 +111,13 @@ def _check_csrf(token):
 def login_required(fn):
     @wraps(fn)
     def inner(*a, **kw):
-        if not session.get("uid"):
+        uid = session.get("uid")
+        if not uid:
+            return redirect(url_for("login_page"))
+        # 每次请求校验用户仍存在且未停用：否则删号/停用后旧会话可再用一小时。
+        u = db.get_user(uid)
+        if not u or u.get("status") != "active":
+            session.clear()
             return redirect(url_for("login_page"))
         return fn(*a, **kw)
     return inner
@@ -653,6 +662,49 @@ def games_page():
 # ---------- AI 对话 ----------
 
 AI_BASE = os.environ.get("AI_BASE_URL", "https://api.deepseek.com").rstrip("/")
+
+# SSRF 防护：用户自填的 base_url 必须是公网 https 地址。
+# 解析出的任一 IP 落在私网/环回/链路本地/保留段即拒绝；禁止重定向。
+def _base_url_safe(url):
+    """返回 (ok, 原因)。仅用于校验用户自填的 base_url。"""
+    try:
+        p = urlparse(url)
+    except Exception:
+        return False, "Base URL 无法解析"
+    if p.scheme != "https":
+        return False, "Base URL 必须使用 https"
+    if not p.hostname or p.username or p.password or p.query or p.fragment:
+        return False, "Base URL 含有非法组成部分"
+    host = p.hostname.lower().rstrip(".")
+    if host == "localhost" or host.endswith(".local") or host.endswith(".internal"):
+        return False, "不允许使用本地地址"
+
+    def bad_ip(ip_text):
+        try:
+            ip = ipaddress.ip_address(ip_text)
+        except ValueError:
+            return True
+        return (ip.is_private or ip.is_loopback or ip.is_link_local
+                or ip.is_reserved or ip.is_multicast or ip.is_unspecified)
+
+    # 字面 IP 直接判定
+    try:
+        literal = ipaddress.ip_address(host)
+        if bad_ip(host):
+            return False, "不允许使用内网或保留地址"
+    except ValueError:
+        pass  # 域名，继续 DNS 解析
+
+    try:
+        infos = socket.getaddrinfo(host, p.port or 443, proto=socket.IPPROTO_TCP)
+    except OSError:
+        return False, "Base URL 域名无法解析"
+    if not infos:
+        return False, "Base URL 域名无法解析"
+    for info in infos:
+        if bad_ip(info[4][0]):
+            return False, "域名解析到内网或保留地址"
+    return True, ""
 AI_KEY = os.environ.get("AI_API_KEY", "")
 
 EMO_RE = re.compile(r"\[\[emo:(\w+)\]\]")
@@ -796,9 +848,7 @@ def chat():
         msgs.append({"role": h["role"], "content": h["content"]})
     msgs.append({"role": "user", "content": text})
 
-    db.add_chat_message(uid, "user", text)
-    db.bump_usage(uid)
-
+    # 落库与扣次数延迟到上游确认 200 之后；失败不应消耗配额或污染历史。
     def gen():
         buf = []
         ef = _EmotionFilter()
@@ -813,11 +863,16 @@ def chat():
                 json={"model": model, "messages": msgs, "stream": True},
                 stream=True,
                 timeout=(10, 180),
+                allow_redirects=False,   # 防止跳转到内网地址（SSRF）
             ) as r:
                 if r.status_code != 200:
                     app.logger.warning("上游 %s：%s", r.status_code, r.text[:200])
                     yield _sse("error", {"message": "AI 服务暂时不可用，稍后再试"})
                     return
+
+                # 上游已接受请求：此时才落用户消息并扣次数
+                db.add_chat_message(uid, "user", text)
+                db.bump_usage(uid)
 
                 for raw in r.iter_lines():
                     if not raw:
@@ -1082,8 +1137,10 @@ def api_messages():
 
     rows = db.list_messages(conv_id, after)
 
+    # 首屏只取 50 条：告知前端还有更早消息，避免误以为已读完整会话
+    has_older = bool(not after and len(rows) >= 50 and db.has_older_messages(conv_id, rows[0]["id"] if rows else 0))
     return jsonify(messages=[_row_dict(r) for r in rows],
-                   me=session["uid"])
+                   me=session["uid"], has_older=has_older)
 
 
 @app.post("/api/messages")
@@ -1171,7 +1228,7 @@ def upload_avatar():
         return redirect(url_for("profile", e="图片无法解析，请换一张"))
 
     if im.width < 80 or im.height < 80:
-        return redirect(url_for("profile", e="图片太小，短边至少 40 像素"))
+        return redirect(url_for("profile", e="图片太小，宽和高都至少 80 像素"))
     if im.width * im.height > 40_000_000:
         return redirect(url_for("profile", e="图片像素过大，请压缩后重试"))
 
@@ -1218,6 +1275,10 @@ def upload_cropped_avatar():
         im.load()
     except Exception:
         return jsonify(error="图片无法解析"), 400
+
+    # 服务端兜底最小尺寸：前端校验可被绕过（与上传路由保持一致）
+    if im.width < 80 or im.height < 80:
+        return jsonify(error="图片太小，宽和高都至少 80 像素"), 400
 
     # 前端裁过，这里兜底再 fit 一次，防止伪造请求塞非正方形图
     im = ImageOps.fit(im.convert("RGB"), (320, 320), Image.LANCZOS)
@@ -1290,6 +1351,7 @@ def _probe_api_key(api_key, base_url):
                 "stream": False,
             },
             timeout=15,
+            allow_redirects=False,   # 防止跳转绕过 base_url 白名单（SSRF）
         )
         if r.status_code == 200:
             return True, ""
@@ -1320,8 +1382,12 @@ def save_api_key():
         return redirect(url_for("profile", e="API Key 长度不正确"))
     if not re.fullmatch(r"[A-Za-z0-9_\-\.]+", api_key):
         return redirect(url_for("profile", e="API Key 含有非法字符"))
-    if base_url and not re.fullmatch(r"https?://[^\s]{4,180}", base_url):
-        return redirect(url_for("profile", e="Base URL 格式不正确"))
+    if base_url:
+        if not re.fullmatch(r"https?://[^\s]{4,180}", base_url):
+            return redirect(url_for("profile", e="Base URL 格式不正确"))
+        safe, why = _base_url_safe(base_url)
+        if not safe:
+            return redirect(url_for("profile", e="Base URL 不安全：" + why))
 
     if not _hit(f"keyprobe:{session['uid']}", 8, 3600):
         return redirect(url_for("profile", e="验证过于频繁，请稍后再试"))

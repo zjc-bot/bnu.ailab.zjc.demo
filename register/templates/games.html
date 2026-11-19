@@ -21,17 +21,19 @@
 .gm-status { font-size: 14px; color: var(--muted); min-height: 22px; text-align: center; }
 .gm-status b { color: var(--text); }
 .gm-board { display: grid; grid-template-columns: repeat(15, 34px); grid-template-rows: repeat(15, 34px);
-  background: #dcb35c; border: 2px solid #8a6a2f; border-radius: 4px; padding: 6px; gap: 0;
+  background: #dcb35c; border: 1px solid #8a6a2f; border-radius: 3px;
   box-shadow: var(--shadow); }
 .gm-cell { width: 34px; height: 34px; position: relative; cursor: pointer; }
+/* 线画在格子的上边与左边：相邻格共享边界，自然连成封闭网格；
+   最右列与最下行由 gm-board 的 border 补上。 */
 .gm-cell::before, .gm-cell::after { content: ''; position: absolute; background: #8a6a2f; opacity: .45; }
-.gm-cell::before { left: 0; right: 0; top: 50%; height: 1px; }
-.gm-cell::after { top: 0; bottom: 0; left: 50%; width: 1px; }
+.gm-cell::before { left: 0; right: 0; top: 0; height: 1px; }
+.gm-cell::after  { top: 0; bottom: 0; left: 0; width: 1px; }
 .gm-stone { position: absolute; width: 28px; height: 28px; border-radius: 50%; left: 3px; top: 3px; z-index: 2;
   box-shadow: 0 1px 2px rgba(0,0,0,.35); }
 .gm-stone.p1 { background: #1f2937; }
 .gm-stone.p2 { background: #f9fafb; border: 1px solid #9ca3af; }
-.gm-cell:hover .gm-stone:empty { box-shadow: inset 0 0 0 2px rgba(29,78,216,.4); }
+.gm-cell:hover::after { background: #8a6a2f; opacity: .9; }
 .gm-rec { margin-top: 20px; padding: 16px; }
 .gm-rec table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .gm-rec th, .gm-rec td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
@@ -107,7 +109,7 @@
         {% for r in records %}
         <tr>
           <td>{{ r.created_at }}</td>
-          <td>{{ '—' }}</td>
+          <td>{{ r.opponent_name or '已注销用户' }}</td>
           <td>{{ '先手' if r.player_a == user.id else '后手' }}</td>
           <td>{{ '胜' if r.winner == user.id else ('负' if r.winner else '和') }} · {{ r.reason }}</td>
           <td>{{ r.steps }}</td>

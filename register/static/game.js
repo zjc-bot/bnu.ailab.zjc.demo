@@ -50,8 +50,11 @@
       }
     }
     if (result) {
-      var win = result.winner === uid ? '你赢了' : '对方获胜';
-      status('<b>' + win + '</b> · ' + (result.reason === 'resign' ? '对方认输' : '五子连珠') + '　刷新查看战绩');
+      var win = result.reason === 'draw' ? '和棋'
+              : (result.winner === uid ? '你赢了' : '对方获胜');
+      var why = result.reason === 'resign' ? '对方认输'
+              : (result.reason === 'draw' ? '棋盘已满' : '五子连珠');
+      status('<b>' + win + '</b> · ' + why + '　刷新查看战绩');
       over = true;
       resignBtn.disabled = true;
       return;
@@ -84,7 +87,7 @@
           : '已创建对局，但 ' + name + ' 当前不在线');
         socket.emit('game:join', { room: room }, function (j) {
           if (j && j.ok) {
-            mySeat = 1;   // 发起方坐先手
+            mySeat = j.seat || 1;   // 座位由服务端下发，不自行推断
             resignBtn.disabled = false;
           }
         });
@@ -98,7 +101,7 @@
     room = d.room;
     socket.emit('game:join', { room: room }, function (j) {
       if (j && j.ok) {
-        mySeat = 2;   // 接受方坐后手
+        mySeat = j.seat || 2;   // 座位由服务端下发
         resignBtn.disabled = false;
       }
     });

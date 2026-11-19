@@ -17,7 +17,14 @@ def register(socketio):
     """把事件处理器挂到 socketio 实例。"""
 
     def current_uid():
-        return session.get("uid")
+        """Socket.IO 握手/事件共用：校验用户仍存在且未停用。"""
+        uid = session.get("uid")
+        if not uid:
+            return None
+        u = root_db.get_user(uid)
+        if not u or u.get("status") != "active":
+            return None
+        return uid
 
     @socketio.on("connect")
     def on_connect(auth=None):
@@ -61,13 +68,20 @@ def register(socketio):
         if not conv:
             return {"ok": False, "error": "会话不存在，请先成为好友"}
         room_id = int(conv["id"])
-        # 邀请即建房：否则 game:join 拿到的 room_id 在 manager 里不存在，全链路断裂。
-        # 房间以会话 id 为 room_id，天然保证同一对好友同一时刻只有一局。
-        try:
-            manager.create_room(room_id, game, uid, peer)
-        except manager.RoomError:
-            # 已存在房间（对方正在对局）：直接复用，不重复创建
-            pass
+        # 邀请即建房；房间以会话 id 为键，同一对好友同一时刻只保留一局。
+        # 终局房间必须先销毁再重建，否则新邀请会落进已结束的旧房、无法落子。
+        if manager.is_finished(room_id):
+            manager.destroy(room_id)
+        if not manager.get_room(room_id):
+            try:
+                manager.create_room(room_id, game, uid, peer)
+            except manager.RoomError as e:
+                return {"ok": False, "error": str(e)}
+        else:
+            #  rooms 仍 active：仅允许原玩家复用，且先手座次以服务端 players 为准
+            r = manager.get_room(room_id)
+            if uid not in r["players"] or peer not in r["players"]:
+                return {"ok": False, "error": "该会话已有进行中的对局"}
         peer_sid = _peer_sid(peer)
         if peer_sid:
             emit("game:invited", {
@@ -84,7 +98,12 @@ def register(socketio):
         uid = current_uid()
         if not uid:
             return {"ok": False, "error": "未登录"}
-        room_id = int(data.get("room") or 0)
+        if not isinstance(data, dict):
+            return {"ok": False, "error": "参数错误"}
+        try:
+            room_id = int(data.get("room") or 0)
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "房间号错误"}
         r = manager.get_room(room_id)
         if not r:
             return {"ok": False, "error": "房间不存在"}
@@ -92,7 +111,8 @@ def register(socketio):
             return {"ok": False, "error": "你不是该房间玩家"}
         join_room(room_id)
         emit("game:state", manager.snapshot(room_id))
-        return {"ok": True}
+        # 座位由服务端下发，客户端不得自行推断（复用房间时座次可能与上次相反）
+        return {"ok": True, "seat": manager.seat_of(room_id, uid)}
 
     def archive(room_id):
         """终局归档：一步棋不落库，只在结束时写一条。失败只记日志，不影响对局。"""
@@ -122,7 +142,12 @@ def register(socketio):
         uid = current_uid()
         if not uid:
             return {"ok": False, "error": "未登录"}
-        room_id = int(data.get("room") or 0)
+        if not isinstance(data, dict):
+            return {"ok": False, "error": "参数错误"}
+        try:
+            room_id = int(data.get("room") or 0)
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "房间号错误"}
         move = data.get("move")
         # 只把坐标交给服务端规则层；客户端传来的 state 一律忽略，
         # 棋盘由 rules 从服务端状态派生，杜绝伪造棋盘与胜负。
@@ -134,6 +159,9 @@ def register(socketio):
         if snap["status"] == "finished" and snap.get("result"):
             archive(room_id)
             emit("game:over", snap, to=room_id)
+            # 终局即释放房间；否则会话 id 被占用，一小时内无法再开新局。
+            # game:over 已带完整 result，重连展示不依赖房间继续存在。
+            manager.destroy(room_id)
         return {"ok": True}
 
     @socketio.on("game:resign")
@@ -141,14 +169,23 @@ def register(socketio):
         uid = current_uid()
         if not uid:
             return {"ok": False, "error": "未登录"}
-        room_id = int(data.get("room") or 0)
+        if not isinstance(data, dict):
+            return {"ok": False, "error": "参数错误"}
+        try:
+            room_id = int(data.get("room") or 0)
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "房间号错误"}
         r = manager.get_room(room_id)
         if not r or uid not in r["players"]:
             return {"ok": False, "error": "无权操作"}
+        # 已终局的棋局再认输会覆盖结果、重复归档，必须拒绝。
+        if r["status"] != "active":
+            return {"ok": False, "error": "对局已结束"}
         winner = r["players"][1 - r["players"].index(uid)]
         snap = manager.finish(room_id, {"winner": winner, "reason": "resign"})
         archive(room_id)
         emit("game:over", snap, to=room_id)
+        manager.destroy(room_id)
         return {"ok": True}
 
 

@@ -216,6 +216,72 @@
     </form>
   </div>
 
+  <div class="panel guide-panel">
+    <h2>网页使用说明</h2>
+
+    <details class="guide" open>
+      <summary>消息 · 与好友聊天</summary>
+      <div class="guide-body">
+        <ol>
+          <li>点左下角「＋」或「选择图片」旁的加好友按钮，输入对方<b>学号</b>查找。</li>
+          <li>发送好友申请，填写验证消息（可选）。</li>
+          <li>对方在「好友」标签页看到申请，点「同意」后双方自动建立会话。</li>
+          <li>在「会话」标签页点开好友，输入消息按 <kbd>Enter</kbd> 发送，<kbd>Shift+Enter</kbd> 换行。</li>
+          <li>新消息每 2 秒自动刷新，不用手动刷新页面。</li>
+        </ol>
+      </div>
+    </details>
+
+    <details class="guide">
+      <summary>小鲸 AI · 对话</summary>
+      <div class="guide-body">
+        <ol>
+          <li>会话列表最顶部的「小鲸 AI」是导览员，点开即可对话。</li>
+          <li>回复逐字显示；刷新页面后历史对话会自动恢复。</li>
+          <li>默认使用实验室提供的额度（每天 40 次）。</li>
+          <li>想用自己的接口：在下方「AI 接口」填 API Key。填入后会先验证有效性，通过即生效，且不再占用实验室额度。</li>
+        </ol>
+      </div>
+    </details>
+
+    <details class="guide">
+      <summary>对战 · 五子棋</summary>
+      <div class="guide-body">
+        <ol>
+          <li>点顶部导航「对战」进入。</li>
+          <li>必须是<b>好友</b>才能对战。在左侧好友列表点「邀请」。</li>
+          <li>邀请只推给<b>同样停留在对战页</b>的好友，请让对方也打开此页。</li>
+          <li>双方进入同一房间后轮流落子，先连成五子者胜。</li>
+          <li>棋盘由服务端校验，不能作弊；对局结束自动记入「最近战绩」。</li>
+        </ol>
+      </div>
+    </details>
+
+    <details class="guide">
+      <summary>头像与账号</summary>
+      <div class="guide-body">
+        <ol>
+          <li>点头像上的相机角标选图，支持 JPG / PNG / WebP，最大 8MB。</li>
+          <li>大图会先自动缩放到合适尺寸，再拖动、缩放框选范围，确认后裁成圆形头像。</li>
+          <li>昵称可自行修改；学号、姓名来自学籍名单，不能改。</li>
+          <li>密码修改后立即生效，其他设备的登录态会失效。</li>
+        </ol>
+      </div>
+    </details>
+
+    <details class="guide">
+      <summary>常见问题</summary>
+      <div class="guide-body">
+        <ul>
+          <li><b>找不到某个同学？</b> 对方要用完备的学号注册并通过邮箱验证，且你们都要是正常状态。</li>
+          <li><b>邀请没反应？</b> 确认好友也在「对战」页；当前用长轮询通信，延迟约 1–2 秒。</li>
+          <li><b>图片传不上去？</b> 检查格式与体积（≤8MB、宽和高都≥80px），或换一张图重试。</li>
+          <li><b>忘记密码？</b> 登录页点「忘记密码」，通过校内邮箱重设。</li>
+        </ul>
+      </div>
+    </details>
+  </div>
+
   <p class="center-note">
     如需注销账号并删除个人数据，请联系实验室管理员。
   </p>

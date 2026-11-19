@@ -21,7 +21,7 @@
   var currentURL = null;
   var MAX_INPUT = 8 * 1024 * 1024;      /* 输入放宽到 8MB */
   var MAX_EDGE = 1600;                  /* 自动降采样后的最长边 */
-  var MIN_EDGE = 40;                    /* 降采样后仍需保底 */
+  var MIN_EDGE = 80;                    /* 与服务端校验一致：宽高都至少 80 */
 
   function openPicker() { fileInput.click(); }
   if (pickBtn) pickBtn.addEventListener('click', openPicker);
@@ -59,8 +59,8 @@
       probe.onload = function () {
         var w = probe.naturalWidth, h = probe.naturalHeight;
 
-        if (Math.min(w, h) < MIN_EDGE) {
-          window.alert('图片太小，短边至少 ' + MIN_EDGE + ' 像素');
+        if (w < MIN_EDGE || h < MIN_EDGE) {
+          window.alert('图片太小，宽和高都至少 ' + MIN_EDGE + ' 像素');
           fileInput.value = '';
           return;
         }

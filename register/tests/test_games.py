@@ -123,3 +123,19 @@ def test_unsupported_game_move_rejected():
     manager.create_room(1, "chess", 10, 20)
     with pytest.raises(manager.RoomError, match="规则尚未接入"):
         manager.apply_move(1, 10, {"x": 0, "y": 0})
+
+
+def test_draw_when_board_full():
+    """棋盘下满且无人五连 → 和棋（winner=0），不能卡死在'已有棋子'。"""
+    from games.rules import gomoku
+    state = gomoku.initial_state()
+    # 构造棋盘仅剩 (0,0) 为空，且任何已有棋子都不构成五连。
+    # 用 2×2 块交替：任意方向连续同色最多 2 格，不可能五连。
+    for y in range(15):
+        for x in range(15):
+            if x == 0 and y == 0:
+                continue
+            state["board"][y][x] = 1 if ((x // 2) + (y // 3)) % 2 == 0 else 2
+    # 最后一手落 (0,0)，player=1；此时 (0,0)=1 与 (0,1)=2 不同色，无五连
+    out = gomoku.apply_move(state, {"x": 0, "y": 0}, 1)
+    assert out["winner"] == 0

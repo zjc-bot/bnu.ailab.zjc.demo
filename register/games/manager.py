@@ -106,10 +106,14 @@ def apply_move(room_id, uid, move):
             {"player": player, "x": move.get("x"), "y": move.get("y")}
         )
         # 五连即终局；无胜负判定规则的游戏继续轮流
-        if new_state.get("winner"):
+        winner_code = new_state.get("winner")
+        if winner_code is not None:
             r["status"] = "finished"
-            r["result"] = {"winner": r["players"][new_state["winner"] - 1],
-                           "reason": "five_in_row"}
+            if winner_code == 0:      # 和棋
+                r["result"] = {"winner": None, "reason": "draw"}
+            else:
+                r["result"] = {"winner": r["players"][winner_code - 1],
+                               "reason": "five_in_row"}
         else:
             r["turn"] = 1 - r["turn"]
         return snapshot(room_id)
@@ -129,6 +133,22 @@ def finish(room_id, result):
 def destroy(room_id):
     with _lock:
         return _rooms.pop(room_id, None) is not None
+
+
+def seat_of(room_id, uid):
+    """返回玩家座位（1/2）；不在房间返回 0。"""
+    r = get_room(room_id)
+    if not r:
+        return 0
+    try:
+        return r["players"].index(uid) + 1
+    except ValueError:
+        return 0
+
+
+def is_finished(room_id):
+    r = get_room(room_id)
+    return bool(r and r["status"] == "finished")
 
 
 def sweep():

@@ -162,7 +162,7 @@ def get_user(uid):
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT id, student_no, real_name, nickname, email, avatar_url, "
-                "created_at, last_login_at FROM app_user WHERE id=%s",
+                "status, created_at, last_login_at FROM app_user WHERE id=%s",
                 (uid,),
             )
             return cur.fetchone()
@@ -561,14 +561,16 @@ def send_friend_request(from_id, to_id, note=""):
                 return True, "对方已申请过，已直接互为好友"
 
             try:
-                # 唯一约束在 execute 阶段就会触发，不能只包 commit
+                # uk_pair 唯一约束兜底并发重复；已拒绝的申请重发时复活为 pending
                 cur.execute(
-                    "INSERT INTO friend_request(from_id, to_id, note) VALUES(%s,%s,%s)",
+                    "INSERT INTO friend_request(from_id, to_id, note, status) "
+                    "VALUES(%s,%s,%s,'pending') "
+                    "ON DUPLICATE KEY UPDATE "
+                    "status='pending', note=VALUES(note), created_at=NOW(), handled_at=NULL",
                     (from_id, to_id, (note or "")[:100]),
                 )
                 conn.commit()
             except pymysql.err.IntegrityError:
-                # uk_active 拦住了并发重复插入
                 conn.rollback()
                 return False, "已经发过申请，等对方处理"
             return True, "好友申请已发送"
@@ -757,16 +759,36 @@ def list_messages(conv_id, after_id=0, limit=50):
             return cur.fetchall()
 
 
-def mark_read(conv_id, reader_id):
+def mark_read(conv_id, reader_id, limit=50):
+    """只标记最近 limit 条未读。
+
+    会话超过 limit 条时，更早的未读保留：它们没有展示给用户，不能被误标已读。
+    """
     with connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 "UPDATE message SET read_at=NOW() "
-                "WHERE conv_id=%s AND sender_id<>%s AND read_at IS NULL",
-                (conv_id, reader_id),
+                "WHERE conv_id=%s AND sender_id<>%s AND read_at IS NULL "
+                "AND id IN ("
+                "  SELECT id FROM (SELECT id FROM message "
+                "  WHERE conv_id=%s AND sender_id<>%s AND read_at IS NULL "
+                "  ORDER BY id DESC LIMIT %s) t"
+                ")",
+                (conv_id, reader_id, conv_id, reader_id, limit),
             )
             conn.commit()
             return cur.rowcount
+
+
+def has_older_messages(conv_id, before_id):
+    """是否存在指定 id 之前的消息。"""
+    with connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT 1 FROM message WHERE conv_id=%s AND id<%s LIMIT 1",
+                (conv_id, before_id),
+            )
+            return cur.fetchone() is not None
 
 
 def total_unread(user_id):
@@ -800,14 +822,18 @@ def save_game_record(conv_id, game, player_a, player_b, winner, reason, moves, s
 
 
 def list_game_records(user_id, limit=20):
-    """个人战绩：该用户参与的最近 N 局。"""
+    """个人战绩：该用户参与的最近 N 局，附带对手昵称。"""
     with connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id, conv_id, game, player_a, player_b, winner, reason, "
-                "       steps, created_at "
-                "FROM game_record WHERE player_a=%s OR player_b=%s "
-                "ORDER BY id DESC LIMIT %s",
-                (user_id, user_id, limit),
+                "SELECT g.id, g.conv_id, g.game, g.player_a, g.player_b, "
+                "       g.winner, g.reason, g.steps, g.created_at, "
+                "       u.nickname AS opponent_name "
+                "FROM game_record g "
+                "LEFT JOIN app_user u ON u.id = CASE WHEN g.player_a=%s "
+                "                          THEN g.player_b ELSE g.player_a END "
+                "WHERE g.player_a=%s OR g.player_b=%s "
+                "ORDER BY g.id DESC LIMIT %s",
+                (user_id, user_id, user_id, limit),
             )
             return cur.fetchall()

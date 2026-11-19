@@ -44,6 +44,8 @@ def apply_move(state, move, player):
     new_board = [row[:] for row in board]
     new_board[y][x] = player
     winner = _five_in_row(new_board, x, y, player)
+    if winner is None and all(all(c != EMPTY for c in row) for row in new_board):
+        winner = 0          # 棋盘落满且无人五连 → 和棋
     return {"board": new_board, "winner": winner}
 
 

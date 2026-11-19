@@ -293,6 +293,12 @@
       myId = d.me || 0;
       var msgs = d.messages || [];
       renderFresh(msgs, myId);
+      if (d.has_older) {
+        var tip = document.createElement('div');
+        tip.className = 'im-date';
+        tip.textContent = '仅显示最近 50 条，更早的消息未展示';
+        bodyEl.insertBefore(tip, bodyEl.firstChild);
+      }
       lastMsgId = msgs.length ? msgs[msgs.length - 1].id : 0;
       loadConvs();
     }).catch(function (e) { toast(e.message); });

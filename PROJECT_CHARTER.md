@@ -373,7 +373,7 @@ D:/MySQL/
 | 6 个 schema 只部署 1 个 | 高 | **已处置** | 部署脚本遍历全部 schema + 14 张表授权 |
 | SECRET_KEY 随机回退 | 高 | **已处置** | 两个 app 均改 fail-fast |
 | admin 白名单可被 XFF 绕过 | 中 | **已处置** | ProxyFix x_for=0，仅信任真实 TCP 对端 |
-| BYOK base_url SSRF | 中 | 未处置 | Phase 1 加域名白名单 |
+| BYOK base_url SSRF | 中 | **已处置** | https + 公网 IP 白名单校验，两处 POST 禁跟随重定向 |
 | 无 git / 无备份 | 中 | git 已建；备份仍缺 | Phase 4 补定时备份 |
 | 内存限流多 worker 失效 | 中 | 单 worker 侥幸可用 | 文档中约束单 worker；扩容前改 Redis |
 | ~~Narabe 引擎很新~~ | — | 已弃用 | 改为服务端自研 Python 规则引擎，无外部依赖 |
@@ -382,6 +382,18 @@ D:/MySQL/
 | 内存字典限流不支持多 worker | 中 | gunicorn 单 worker 侥幸可用 | 扩容前改 Redis 或外部存储；保持单 worker 约束 |
 | ~~AI 对话后端成孤儿~~ | — | **误判，已澄清**：前端已整合进 `im.js`，功能在用 | 无需处置 |
 | 轮询触发全量写 access_log | 低 | IM 每 2s 轮询均写库 | Phase 1 将 `/api/` 轮询路径加入 `SKIP_LOG_PREFIX` |
+| 终局房间未销毁→一小时无法再开新局 | 高 | **已处置** | 终局即 `destroy`；重复邀请遇到 finished 房间先清后建；座位由服务端下发 |
+| 已终局仍可认输覆盖战绩 | 中 | **已处置** | `on_resign` 校验 `status`，已终局拒绝 |
+| 棋盘下满无和棋 | 中 | **已处置** | `gomoku` 落满返回 winner=0，manager 写 draw |
+| 停用/删用户后会话仍可用 | 中 | **已处置** | `login_required` 与 Socket.IO `current_uid` 每次校验用户存在+status |
+| AI 上游失败仍扣次数/污染历史 | 中 | **已处置** | 落库与扣次数移到上游返回 200 之后 |
+| >50 条未读被误标已读 | 中 | **已处置** | `mark_read` 限最近 50 条；API 返回 `has_older`，前端提示 |
+| 异地登录邮件 UA 未转义 | 中 | **已处置** | `html.escape` 转义 ua/ip/nickname |
+| 头像提示 40 vs 校验 80、裁剪不查尺寸 | 低 | **已处置** | 三处文案统一 80；裁剪接口补服务端最小尺寸校验 |
+| 好友申请唯一约束缺失 | 低 | **已处置** | schema 加 `uk_pair`；`ON DUPLICATE KEY` 支持拒绝后重发；`schema_chat_migrate.sql` 清历史重复 |
+| 删用户不删 game_record / 战绩内连接 | 低 | **已处置** | 删用户连带清 game_record；战绩改 LEFT JOIN 显示已注销 |
+| 非 dict 载荷抛异常 | 低 | **已处置** | join/move/resign 均加 isinstance 与 int 转换校验 |
+| register nginx 反代与 x_for=0 矛盾 | 中 | **待确认拓扑** | 走隧道则维持 x_for=0；若实际经 nginx 反代，需连同 admin 白名单重新设计 |
 
 ---
 
@@ -411,6 +423,7 @@ D:/MySQL/
 | 2026-11-18 | 聊天记录导出采用 md / json 双格式 | 新增 `all_chat_messages` 取全量，`/api/chat/export` 附件下载，UI 导出按钮仅在 AI 会话显示；不改变 history 现有 50 条上限 |
 | 2026-11-18 | 规则引擎改为服务端自研 Python，弃用前端 JS 引擎 | 服务端权威校验要求规则在服务端执行；narabe/chess.js 等纯前端引擎无法防伪造棋盘。自研 `gomoku.py` 无 License 风险 |
 | 2026-11-18 | Phase 3 五子棋本地全链路完成 | 权威规则 + 邀请/落子/终局/归档 + `/games` 页面；15 项测试全过（含 Socket.IO 集成）。浏览器真人实测与生产切换仍待做 |
+| 2026-11-19 | 代码审查修复（15 属实 / 2 纠正） | 高危：终局房间未销毁、base_url SSRF；中危：认输覆盖、会话失效、AI 失败扣费、未读误标、UA 未转义、和棋缺失、用户状态校验；低危：头像文案、好友唯一约束、战绩一致性。学生限流伪造 IP **不成立**（nginx 追加 XFF + x_for=1 取真实 IP）；"删用户在 db.py"**定位纠正**（在 admin.py）。23 项测试全过 |
 
 ---
 

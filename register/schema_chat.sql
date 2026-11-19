@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS `friend_request` (
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `handled_at` DATETIME NULL,
   PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_pair` (`from_id`, `to_id`) COMMENT '防并发重复申请；拒绝后重发走 ON DUPLICATE KEY 更新状态',
   KEY `idx_to_status` (`to_id`, `status`, `created_at`),
   KEY `idx_from` (`from_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci

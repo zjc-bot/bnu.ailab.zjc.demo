@@ -180,6 +180,49 @@ input::placeholder { color: var(--faint); }
 .row-actions form { margin: 0; }
 .placeholder-note { color: var(--faint); font-size: 13px; padding: 18px 0 10px; }
 
+/* ---------- 使用说明 ---------- */
+.guide-panel details.guide { border-bottom: 1px solid var(--line); }
+.guide-panel details.guide:last-child { border-bottom: 0; }
+.guide-panel summary {
+  cursor: pointer;
+  padding: 10px 2px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text);
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.guide-panel summary::-webkit-details-marker { display: none; }
+.guide-panel summary::before {
+  content: "▸";
+  color: var(--faint);
+  font-size: 11px;
+  transition: transform .15s;
+}
+.guide-panel details[open] summary::before { transform: rotate(90deg); }
+.guide-panel summary:hover { color: var(--primary); }
+.guide-body {
+  padding: 2px 2px 12px 20px;
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.85;
+}
+.guide-body ol, .guide-body ul { margin: 0; padding-left: 18px; }
+.guide-body li { margin: 3px 0; }
+.guide-body b { color: var(--text); font-weight: 600; }
+.guide-body kbd {
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: #f9fafb;
+  color: var(--text);
+}
+
 /* ---------- 头像编辑 ---------- */
 .avatar-edit { display: flex; gap: 18px; align-items: flex-start; }
 .avatar-preview {

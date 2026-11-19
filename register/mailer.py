@@ -1,5 +1,6 @@
 """邮件发送：北师大企业邮（网易托管），SMTP over SSL 465。"""
 
+import html
 import os
 import smtplib
 import ssl
@@ -139,7 +140,7 @@ def send_reset_link(to_email, nickname, reset_url, ttl_minutes=30):
 """
     body = (
         f'<p style="margin:0 0 14px;color:#111827;font-size:14px;">'
-        f'{nickname}，你好：</p>'
+        f'{html.escape(str(nickname))}，你好：</p>'
         '<p style="margin:0 0 16px;color:#374151;font-size:13.5px;">'
         '我们收到重置你 BNU AI Lab 账号密码的请求。点击下方按钮设置新密码：</p>'
         f'<div style="text-align:center;margin:20px 0;">'
@@ -171,14 +172,14 @@ def send_login_alert(to_email, nickname, ip, ua, when):
 """
     body = (
         f'<p style="margin:0 0 14px;color:#111827;font-size:14px;">'
-        f'{nickname}，你好：</p>'
+        f'{html.escape(str(nickname))}，你好：</p>'
         '<p style="margin:0 0 16px;color:#374151;font-size:13.5px;">'
         '你的账号刚刚从一个<strong>新的网络位置</strong>登录：</p>'
         '<div style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;'
         'padding:14px 16px;margin-bottom:16px;font-size:13px;color:#92400e;">'
-        f'<div style="margin-bottom:5px;">时间：{when}</div>'
-        f'<div style="margin-bottom:5px;">IP：<span style="font-family:monospace;">{ip}</span></div>'
-        f'<div>设备：{ua}</div></div>'
+        f'<div style="margin-bottom:5px;">时间：{html.escape(str(when))}</div>'
+        f'<div style="margin-bottom:5px;">IP：<span style="font-family:monospace;">{html.escape(str(ip))}</span></div>'
+        f'<div>设备：{html.escape(str(ua))}</div></div>'
         '<p style="margin:0;color:#374151;font-size:13px;">'
         '如果这是你本人操作，可以忽略本邮件。</p>'
         '<p style="margin:6px 0 0;color:#b91c1c;font-size:13px;">'
