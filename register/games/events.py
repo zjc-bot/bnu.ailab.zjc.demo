@@ -1,16 +1,20 @@
-"""Socket.IO 事件层：好友对战（PvP）主线。
+"""Socket.IO 事件层：好友对战（PvP）+ 小鲸 AI 对战（PvE）。
 
 认证：复用 Flask session（cookie 随握手发送），不另发 token。
-房间：conversation_id 作为 room_id，仅好友可加入。
+房间：PvP 用 conversation_id 作为 room_id，PvE 用负数 uid 作为 room_id。
+持久化：对战邀请写入 game_invite，接收方上线后可读取；棋盘热态仍只在内存。
 """
 
+import datetime
 import json
 
 import db as root_db
-from flask import request, session
-from flask_socketio import emit, join_room, leave_room
+from flask import current_app, request, session
+from flask_socketio import emit, join_room
 
-from . import manager
+from . import ai, manager, rules, store
+
+AI_PLAYER = "ai:whale"
 
 
 def register(socketio):
@@ -26,6 +30,74 @@ def register(socketio):
             return None
         return uid
 
+    def serialize_invites(rows):
+        items = []
+        for row in rows or []:
+            item = dict(row)
+            at = item.get("created_at")
+            if isinstance(at, (datetime.datetime, datetime.date)):
+                item["created_at"] = at.isoformat(sep=" ", timespec="seconds")
+            items.append(item)
+        return items
+
+    def pending_invites(uid):
+        try:
+            return serialize_invites(store.pending_for(uid))
+        except Exception:
+            current_app.logger.exception("读取离线对战邀请失败 uid=%s", uid)
+            return []
+
+    def deliver_pending(uid):
+        emit("game:invites", {"items": pending_invites(uid)})
+
+    def archive(room_id):
+        """终局归档：一步棋不落库，只在结束时写一条。失败只记日志，不影响对局。"""
+        r = manager.get_room(room_id)
+        if not r or not r.get("result"):
+            return
+        result = r["result"]
+        try:
+            root_db.save_game_record(
+                conv_id=room_id if isinstance(room_id, int) and room_id > 0 else None,
+                game=r["game"],
+                player_a=r["players"][0],
+                player_b=r["players"][1],
+                winner=result.get("winner"),
+                reason=result.get("reason", ""),
+                moves=json.dumps(r.get("moves", []), ensure_ascii=False),
+                steps=r.get("seq", 0),
+                ai_difficulty=r.get("difficulty"),
+            )
+        except Exception:
+            # 归档失败不应让对局端收到错误；日志留痕供排查。
+            current_app.logger.exception("对局归档失败 room=%s", room_id)
+
+    def finalize(room_id, snap):
+        if snap.get("status") == "finished" and snap.get("result"):
+            archive(room_id)
+            emit("game:over", snap, to=room_id)
+            # 终局即释放房间；否则同一房间号一小时内无法再开新局。
+            manager.destroy(room_id)
+
+    def ai_reply(room_id, snap):
+        """PvE：真人落子后服务端立即计算并校验 AI 着法。"""
+        r = manager.get_room(room_id)
+        if not r or r["status"] != "active":
+            return snap
+        if r["players"][r["turn"]] != AI_PLAYER:
+            return snap
+        try:
+            move = ai.choose_move(
+                snap["state"], r.get("difficulty") or "normal", player=2,
+            )
+            if move is None:
+                return manager.finish(room_id, {"winner": None, "reason": "draw"})
+            return manager.apply_move(room_id, AI_PLAYER, move)
+        except Exception:
+            # 不能把用户留在“AI 回合”却永远等不到落子；按异常平局收局。
+            current_app.logger.exception("AI 落子失败 room=%s", room_id)
+            return manager.finish(room_id, {"winner": None, "reason": "ai_error"})
+
     @socketio.on("connect")
     def on_connect(auth=None):
         uid = current_uid()
@@ -36,6 +108,7 @@ def register(socketio):
         # 导致邀请只投到最后一个连接（可能已关闭）。
         _sids.setdefault(uid, set()).add(request.sid)
         emit("connected", {"uid": uid})
+        deliver_pending(uid)
 
     @socketio.on("disconnect")
     def on_disconnect(reason=None):
@@ -46,9 +119,19 @@ def register(socketio):
                 _sids.pop(uid, None)
         # 不立即销毁房间：对方断线后重连应能恢复（见 §8.3）
 
+    @socketio.on("game:invites")
+    def on_list_invites(data=None):
+        """客户端也可主动刷新待处理邀请；始终只返回当前登录用户自己的。"""
+        uid = current_uid()
+        if not uid:
+            return {"ok": False, "error": "未登录", "items": []}
+        items = pending_invites(uid)
+        emit("game:invites", {"items": items})
+        return {"ok": True, "items": items}
+
     @socketio.on("game:invite")
     def on_invite(data):
-        """A 邀请好友 B 对局。校验好友关系后返回 room_id 供双方加入。"""
+        """A 邀请好友 B 对局。邀请先持久化，再向在线连接推送。"""
         uid = current_uid()
         if not uid:
             return {"ok": False, "error": "未登录"}
@@ -57,7 +140,8 @@ def register(socketio):
 
         peer = data.get("to")
         game = data.get("game")
-        if not isinstance(peer, int) or not game:
+        if (not isinstance(peer, int) or isinstance(peer, bool)
+                or not isinstance(game, str) or not rules.supported(game)):
             return {"ok": False, "error": "参数错误"}
 
         # 好友关系：friend 表双向存两行，查一行即可
@@ -69,19 +153,29 @@ def register(socketio):
             return {"ok": False, "error": "会话不存在，请先成为好友"}
         room_id = int(conv["id"])
         # 邀请即建房；房间以会话 id 为键，同一对好友同一时刻只保留一局。
-        # 终局房间必须先销毁再重建，否则新邀请会落进已结束的旧房、无法落子。
         if manager.is_finished(room_id):
             manager.destroy(room_id)
+        created = False
         if not manager.get_room(room_id):
             try:
                 manager.create_room(room_id, game, uid, peer)
+                created = True
             except manager.RoomError as e:
                 return {"ok": False, "error": str(e)}
         else:
-            #  rooms 仍 active：仅允许原玩家复用，且先手座次以服务端 players 为准
             r = manager.get_room(room_id)
             if uid not in r["players"] or peer not in r["players"]:
                 return {"ok": False, "error": "该会话已有进行中的对局"}
+
+        # 先落库再通知：好友离线/页面未打开时，上线仍能看到邀请。
+        try:
+            store.create_invite(room_id, game, uid, peer)
+        except Exception:
+            if created:
+                manager.destroy(room_id)
+            current_app.logger.exception("保存对战邀请失败 room=%s", room_id)
+            return {"ok": False, "error": "邀请保存失败，请稍后重试"}
+
         peer_sid = _peer_sid(peer)
         if peer_sid:
             emit("game:invited", {
@@ -89,8 +183,29 @@ def register(socketio):
                 "game": game,
                 "room": room_id,
             }, to=peer_sid)
-        # 离线时不推送；邀请本身已落到 message 表（Phase 3 补），上线后可查
         return {"ok": True, "room": room_id, "delivered": bool(peer_sid)}
+
+    @socketio.on("game:invite:decline")
+    def on_decline(data):
+        uid = current_uid()
+        if not uid:
+            return {"ok": False, "error": "未登录"}
+        if not isinstance(data, dict):
+            return {"ok": False, "error": "参数错误"}
+        try:
+            room_id = int(data.get("room") or 0)
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "房间号错误"}
+        try:
+            row = store.decline_pending(room_id, uid)
+        except Exception:
+            current_app.logger.exception("拒绝对战邀请失败 room=%s", room_id)
+            return {"ok": False, "error": "操作失败，请稍后重试"}
+        if row:
+            sid = _peer_sid(row["from_id"])
+            if sid:
+                emit("game:invite:declined", {"room": room_id, "by": uid}, to=sid)
+        return {"ok": True}
 
     @socketio.on("game:join")
     def on_join(data):
@@ -106,39 +221,52 @@ def register(socketio):
             return {"ok": False, "error": "房间号错误"}
         r = manager.get_room(room_id)
         if not r:
-            return {"ok": False, "error": "房间不存在"}
+            # 内存房间已超时：把仍在库的待处理邀请一并收口，避免反复弹出死邀请。
+            try:
+                store.expire_pending(room_id, uid)
+            except Exception:
+                current_app.logger.exception("清理过期邀请失败 room=%s", room_id)
+            return {"ok": False, "error": "邀请已过期，请让对方重新发起"}
         if uid not in r["players"]:
             return {"ok": False, "error": "你不是该房间玩家"}
         join_room(room_id)
+        if room_id > 0:
+            try:
+                store.accept_pending(room_id, uid)
+            except Exception:
+                current_app.logger.exception("接受对战邀请落库失败 room=%s", room_id)
         emit("game:state", manager.snapshot(room_id))
         # 座位由服务端下发，客户端不得自行推断（复用房间时座次可能与上次相反）
         return {"ok": True, "seat": manager.seat_of(room_id, uid)}
 
-    def archive(room_id):
-        """终局归档：一步棋不落库，只在结束时写一条。失败只记日志，不影响对局。"""
-        r = manager.get_room(room_id)
-        if not r or not r.get("result"):
-            return
-        result = r["result"]
+    @socketio.on("game:ai:start")
+    def on_ai_start(data):
+        """创建 PvE 房间。AI 始终为后手，难度由服务端保存。"""
+        uid = current_uid()
+        if not uid:
+            return {"ok": False, "error": "未登录"}
+        if not isinstance(data, dict):
+            return {"ok": False, "error": "参数错误"}
+        game = data.get("game")
+        difficulty = data.get("difficulty", "normal")
+        if game != "gomoku" or not rules.supported(game):
+            return {"ok": False, "error": "AI 对手暂只支持五子棋"}
+        if difficulty not in ai.DIFFICULTIES:
+            return {"ok": False, "error": "难度参数错误"}
+
+        room_id = -int(uid)
+        if manager.get_room(room_id):
+            manager.destroy(room_id)
         try:
-            root_db.save_game_record(
-                conv_id=room_id,
-                game=r["game"],
-                player_a=r["players"][0],
-                player_b=r["players"][1],
-                winner=result.get("winner"),
-                reason=result.get("reason", ""),
-                moves=json.dumps(r.get("moves", []), ensure_ascii=False),
-                steps=r.get("seq", 0),
-            )
-        except Exception:
-            # 归档失败不应让对局端收到错误；日志留痕供排查。
-            import flask
-            flask.current_app.logger.exception("对局归档失败 room=%s", room_id)
+            manager.create_room(room_id, game, uid, AI_PLAYER,
+                                difficulty=difficulty)
+        except manager.RoomError as e:
+            return {"ok": False, "error": str(e)}
+        return {"ok": True, "room": room_id, "difficulty": difficulty}
 
     @socketio.on("game:move")
     def on_move(data):
-        """落子：服务端权威校验后广播完整快照。"""
+        """落子：服务端权威校验后广播完整快照；PvE 自动接一步 AI 着法。"""
         uid = current_uid()
         if not uid:
             return {"ok": False, "error": "未登录"}
@@ -156,12 +284,15 @@ def register(socketio):
         except manager.RoomError as e:
             return {"ok": False, "error": str(e)}
         emit("game:state", snap, to=room_id)
-        if snap["status"] == "finished" and snap.get("result"):
-            archive(room_id)
-            emit("game:over", snap, to=room_id)
-            # 终局即释放房间；否则会话 id 被占用，一小时内无法再开新局。
-            # game:over 已带完整 result，重连展示不依赖房间继续存在。
-            manager.destroy(room_id)
+
+        r = manager.get_room(room_id)
+        if (snap["status"] == "active" and r
+                and AI_PLAYER in r["players"]
+                and r["players"][r["turn"]] == AI_PLAYER):
+            snap = ai_reply(room_id, snap)
+            emit("game:state", snap, to=room_id)
+
+        finalize(room_id, snap)
         return {"ok": True}
 
     @socketio.on("game:resign")
@@ -183,9 +314,7 @@ def register(socketio):
             return {"ok": False, "error": "对局已结束"}
         winner = r["players"][1 - r["players"].index(uid)]
         snap = manager.finish(room_id, {"winner": winner, "reason": "resign"})
-        archive(room_id)
-        emit("game:over", snap, to=room_id)
-        manager.destroy(room_id)
+        finalize(room_id, snap)
         return {"ok": True}
 
 

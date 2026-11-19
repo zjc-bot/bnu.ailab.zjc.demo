@@ -960,15 +960,17 @@ def total_unread(user_id):
 
 # ---------- 对战归档 ----------
 
-def save_game_record(conv_id, game, player_a, player_b, winner, reason, moves, steps):
+def save_game_record(conv_id, game, player_a, player_b, winner, reason, moves, steps,
+                     ai_difficulty=None):
     """终局写一条归档。moves 为着法列表，由调用方转成 JSON 字符串。"""
     with connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO game_record"
-                "(conv_id, game, player_a, player_b, winner, reason, moves, steps) "
-                "VALUES(%s,%s,%s,%s,%s,%s,%s,%s)",
-                (conv_id, game, player_a, player_b, winner, reason, moves, steps),
+                "(conv_id, game, ai_difficulty, player_a, player_b, winner, reason, moves, steps) "
+                "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                (conv_id, game, ai_difficulty, player_a, player_b, winner, reason,
+                 moves, steps),
             )
             rid = cur.lastrowid
             conn.commit()
@@ -976,18 +978,42 @@ def save_game_record(conv_id, game, player_a, player_b, winner, reason, moves, s
 
 
 def list_game_records(user_id, limit=20):
-    """个人战绩：该用户参与的最近 N 局，附带对手昵称。"""
+    """个人战绩：该用户参与的最近 N 局，附带对手昵称。
+
+    PvE 的 player_b / winner 是字符串标记，查询与 Jinja 比较前统一处理。
+    """
     with connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT g.id, g.conv_id, g.game, g.player_a, g.player_b, "
-                "       g.winner, g.reason, g.steps, g.created_at, "
-                "       u.nickname AS opponent_name "
+                "SELECT g.id, g.conv_id, g.game, g.ai_difficulty, "
+                "       g.player_a, g.player_b, g.winner, g.reason, "
+                "       g.steps, g.created_at, "
+                "       CASE WHEN g.player_b='ai:whale' "
+                "            THEN CONCAT('小鲸', "
+                "              IF(g.ai_difficulty IS NULL, '', "
+                "                 CONCAT('（', g.ai_difficulty, '）'))) "
+                "            ELSE u.nickname END AS opponent_name "
                 "FROM game_record g "
                 "LEFT JOIN app_user u ON u.id = CASE WHEN g.player_a=%s "
                 "                          THEN g.player_b ELSE g.player_a END "
-                "WHERE g.player_a=%s OR g.player_b=%s "
+                "WHERE g.player_a=%s OR "
+                "      (g.player_b REGEXP '^[0-9]+$' AND "
+                "       CAST(g.player_b AS UNSIGNED)=%s) "
                 "ORDER BY g.id DESC LIMIT %s",
                 (user_id, user_id, user_id, limit),
             )
-            return cur.fetchall()
+            rows = cur.fetchall()
+    reason_labels = {
+        "five_in_row": "五子连珠",
+        "resign": "认输",
+        "draw": "和棋",
+        "ai_error": "AI 异常",
+        "checkmate": "将死",
+        "uno_out": "先出完牌",
+    }
+    for row in rows:
+        winner = row.get("winner")
+        if isinstance(winner, str) and winner.isdigit():
+            row["winner"] = int(winner)
+        row["reason_text"] = reason_labels.get(row.get("reason"), row.get("reason"))
+    return rows

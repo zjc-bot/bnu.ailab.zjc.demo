@@ -2,7 +2,7 @@
 
 安全约束：
   - 不重新生成 .env（保留现有 SECRET_KEY、SITE_URL、SMTP 配置）
-  - 不重跑全量 schema，只建缺失的 game_record 表
+  - 不重跑全量 schema，只幂等补齐游戏表、消息表与 AI 对战迁移
   - 不改 systemd worker 类型（保持同步 gthread，Socket.IO 走长轮询）
   - 部署前已在服务器做代码 + 数据库备份
 """
@@ -35,7 +35,7 @@ def mysql(sql, t=120):
     with sftp.file("/tmp/_dml.sql", "w") as f:
         f.write(sql + ";\n")
     sftp.close()
-    out = run(f"mysql -uroot -p'{MYSQL_PW}' < /tmp/_dml.sql 2>&1; rm -f /tmp/_dml.sql", t)
+    out = run(f"mysql -N -uroot -p'{MYSQL_PW}' < /tmp/_dml.sql 2>&1; rm -f /tmp/_dml.sql", t)
     return out
 
 
@@ -64,15 +64,38 @@ if not all(name in (cols or '') for name in
            ('quote_id', 'deleted_by_a', 'deleted_by_b', 'forward_from')):
     raise SystemExit("消息表 4 列未就绪，中止部署（避免上传代码后消息页 500）")
 
-print("\n=== 2. 授权 app_user 对 game_record ===")
+print("\n=== 1c. 游戏邀请表 + AI 对战迁移（幂等，必须先于代码上传）===")
+sftp = c.open_sftp()
+sftp.put(os.path.join(LOCAL, "schema_game_ai.sql"), "/tmp/game_ai.sql")
+sftp.close()
+print(" ", run(f"mysql -uroot -p'{MYSQL_PW}' < /tmp/game_ai.sql 2>&1 | grep -v Warning; rm -f /tmp/game_ai.sql") or "OK")
+schema_ok = mysql(
+    "SELECT CONCAT_WS(',', "
+    "(SELECT COUNT(*) FROM information_schema.tables "
+    " WHERE TABLE_SCHEMA='school' AND TABLE_NAME='game_invite'), "
+    "(SELECT COUNT(*) FROM information_schema.COLUMNS "
+    " WHERE TABLE_SCHEMA='school' AND TABLE_NAME='game_record' "
+    "   AND COLUMN_NAME='ai_difficulty'), "
+    "(SELECT COUNT(*) FROM information_schema.COLUMNS "
+    " WHERE TABLE_SCHEMA='school' AND TABLE_NAME='game_record' "
+    "   AND COLUMN_NAME='conv_id' AND IS_NULLABLE='YES'))"
+)
+print("  校验 [game_invite, ai_difficulty, conv_id nullable]:", schema_ok)
+if schema_ok != "1,1,1":
+    raise SystemExit("AI 对战迁移未就绪，中止部署（避免上传代码后游戏页失败）")
+
+print("\n=== 2. 授权 app_user 对战表 ===")
 mysql("GRANT SELECT, INSERT, UPDATE, DELETE ON school.game_record TO 'studentapp'@'127.0.0.1'")
+mysql("GRANT SELECT, INSERT, UPDATE, DELETE ON school.game_invite TO 'studentapp'@'127.0.0.1'")
 mysql("FLUSH PRIVILEGES")
 print("  完成")
 
 print("\n=== 3. 上传新增/变更文件 ===")
 FILES = [
     "app.py", "db.py", "admin.py", "requirements.txt",
+    "schema_game.sql", "schema_game_ai.sql", "schema_message_v2.sql",
     "games/__init__.py", "games/events.py", "games/manager.py",
+    "games/store.py", "games/ai/__init__.py", "games/ai/gomoku.py",
     "games/rules/__init__.py", "games/rules/gomoku.py",
     "static/game.js", "static/socket.io/socket.io.min.js",
     "templates/games.html",

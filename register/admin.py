@@ -398,10 +398,15 @@ def delete_user(uid):
 
     with db.connect() as conn:
         with conn.cursor() as cur:
-            # 对局归档引用 conv_id，须在会话删除前清理
+            # 对局归档与邀请：PvP 引用 conv_id，PvE 引用 player_a，均须清理
             cur.execute(
-                "DELETE FROM game_record WHERE conv_id IN "
-                "(SELECT id FROM conversation WHERE user_a=%s OR user_b=%s)",
+                "DELETE FROM game_record WHERE "
+                "conv_id IN (SELECT id FROM conversation WHERE user_a=%s OR user_b=%s) "
+                "OR player_a=%s OR player_b=%s",
+                (uid, uid, uid, str(uid)),
+            )
+            cur.execute(
+                "DELETE FROM game_invite WHERE from_id=%s OR to_id=%s",
                 (uid, uid),
             )
             # 通讯数据：先删消息再删会话，否则留下孤儿记录

@@ -22,6 +22,19 @@ class GameRuleError(Exception):
     pass
 
 
+# 各游戏正常终局的原因；规则层集中定义，房间层不硬编码五子棋。
+_RESULT_REASON = {
+    "gomoku": "five_in_row",
+    "chess": "checkmate",
+    "xiangqi": "checkmate",
+    "uno": "uno_out",
+}
+
+
+def result_reason(game):
+    return _RESULT_REASON.get(game, "win")
+
+
 def supported(game):
     return game in _RULES
 

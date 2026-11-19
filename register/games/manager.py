@@ -23,8 +23,11 @@ class RoomError(Exception):
     pass
 
 
-def create_room(room_id, game, p1, p2, initial_state=None):
-    """创建对局房间。p1/p2 为用户 id（int），AI 对手用 'ai:whale' 字符串。"""
+def create_room(room_id, game, p1, p2, initial_state=None, difficulty=None):
+    """创建对局房间。p1/p2 为用户 id（int），AI 对手用 'ai:whale' 字符串。
+
+    difficulty 仅对 PvE 生效，由服务端保存，客户端不能在落子时改写。
+    """
     with _lock:
         if room_id in _rooms:
             raise RoomError("房间已存在")
@@ -45,6 +48,7 @@ def create_room(room_id, game, p1, p2, initial_state=None):
             "moves": [],                # 着法序列 [{player,x,y}]，终局归档用
             "created_at": time.time(),
             "status": "active",
+            "difficulty": difficulty if isinstance(p2, str) else None,
         }
         return snapshot(room_id)
 
@@ -74,6 +78,7 @@ def snapshot(room_id):
         "seq": r["seq"],
         "status": r["status"],
         "result": r.get("result"),   # 终局结果，供 game:over 广播与重连恢复
+        "difficulty": r.get("difficulty"),
         "moves": list(r.get("moves", [])),
     }
 
@@ -113,7 +118,7 @@ def apply_move(room_id, uid, move):
                 r["result"] = {"winner": None, "reason": "draw"}
             else:
                 r["result"] = {"winner": r["players"][winner_code - 1],
-                               "reason": "five_in_row"}
+                               "reason": rules.result_reason(r["game"])}
         else:
             r["turn"] = 1 - r["turn"]
         return snapshot(room_id)

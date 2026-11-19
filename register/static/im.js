@@ -16,6 +16,8 @@
   var convs = [];
   var friends = [];
   var requests = [];
+  var convsLoaded = false;
+  var friendsLoaded = false;
   var activeConv = 0;
   var activePeer = null;
   var myId = 0;
@@ -24,6 +26,8 @@
   var sending = false;
   var aiMode = false;          /* 当前是否在跟 AI 对话 */
   var aiBusy = false;
+  var aiRoundCount = 0;
+  var aiEntryDismissed = false;
 
   /* ---------- 消息交互（§9B）：引用 / 转发 / 删除 / 多选 ---------- */
   var quotes = {};             // {msgId: {sender_id, content}} 引用摘要
@@ -36,6 +40,11 @@
 
   var EMO_RE = /\[\[emo:\w+\]\]/g;
   var AI_AVATAR = '/static/whale/avatar.webp?v=1';   /* 小鲸头像 */
+  var AI_UNAVAILABLE = '小鲸暂时联系不上，稍后再试就好。';
+  var GUIDE_PREFIX = 'bnu.im.guide.';
+  var guideMemory = {};
+  var homeGuide = document.getElementById('homeGuide');
+  var aiExportGuide = document.getElementById('aiExportGuide');
 
   /* ---------- 场景（像素蓝天白云，情绪联动） ---------- */
   var stage = document.getElementById('imStage');
@@ -83,6 +92,87 @@
     var d = document.createElement('div');
     d.textContent = s == null ? '' : String(s);
     return d.innerHTML;
+  }
+
+  /* ---------- 一次性新手引导（§9A.4） ---------- */
+  function guideSeen(name) {
+    if (guideMemory[name]) return true;
+    try { return localStorage.getItem(GUIDE_PREFIX + name) === '1'; }
+    catch (e) { return false; }
+  }
+
+  function markGuide(name) {
+    guideMemory[name] = true;
+    try { localStorage.setItem(GUIDE_PREFIX + name, '1'); } catch (e) {}
+  }
+
+  function dismissHomeGuide() {
+    markGuide('homeEmpty');
+    if (homeGuide) homeGuide.hidden = true;
+  }
+
+  function maybeShowHomeGuide() {
+    if (!homeGuide || !convsLoaded || !friendsLoaded) return;
+    /* 已有联系人或会话说明用户已完成这一步，不再补播引导。 */
+    if (friends.length || convs.length) {
+      dismissHomeGuide();
+      return;
+    }
+    if (guideSeen('homeEmpty')) return;
+    markGuide('homeEmpty');
+    homeGuide.hidden = false;
+  }
+
+  function dismissAIEntryGuide() {
+    aiEntryDismissed = true;
+    markGuide('aiEntry');
+    var tip = document.getElementById('aiEntryGuide');
+    if (tip) tip.remove();
+  }
+
+  function appendAIEntryGuide() {
+    if (aiEntryDismissed || guideSeen('aiEntry') || document.getElementById('aiEntryGuide')) return;
+    var tip = document.createElement('div');
+    tip.className = 'im-guide im-ai-guide';
+    tip.id = 'aiEntryGuide';
+    tip.setAttribute('role', 'status');
+    var head = document.createElement('div');
+    head.className = 'im-guide-head';
+    var text = document.createElement('span');
+    text.className = 'im-guide-text';
+    text.textContent = '这是小鲸，可以随时找它聊天，对话能导出保存';
+    var skip = document.createElement('button');
+    skip.type = 'button';
+    skip.className = 'im-guide-dismiss';
+    skip.textContent = '跳过';
+    skip.addEventListener('click', dismissAIEntryGuide);
+    head.append(text, skip);
+    tip.appendChild(head);
+    listEl.appendChild(tip);
+  }
+
+  function countAIRounds(messages) {
+    var rounds = 0;
+    var awaitingReply = false;
+    (messages || []).forEach(function (m) {
+      if (m.role === 'user') awaitingReply = true;
+      else if (m.role === 'assistant' && awaitingReply) {
+        rounds++;
+        awaitingReply = false;
+      }
+    });
+    return rounds;
+  }
+
+  function maybeShowAIExportGuide() {
+    if (!aiExportGuide || !aiMode || aiRoundCount < 3 || guideSeen('aiExport')) return;
+    markGuide('aiExport');
+    aiExportGuide.hidden = false;
+  }
+
+  function dismissAIExportGuide() {
+    markGuide('aiExport');
+    if (aiExportGuide) aiExportGuide.hidden = true;
   }
 
   /* ---------- 消息交互 UI（全部 JS 创建，不改模板/CSS，避免与并行改动冲突） ---------- */
@@ -376,8 +466,12 @@
           '<span class="im-online-dot"></span>' +
         '</div>' +
       '</div>';
-    aiBtn.addEventListener('click', function () { openAI(); });
+    aiBtn.addEventListener('click', function () {
+      dismissAIEntryGuide();
+      openAI();
+    });
     listEl.appendChild(aiBtn);
+    appendAIEntryGuide();
 
     /* 好友申请：置顶显示 */
     requests.forEach(function (r) {
@@ -441,7 +535,9 @@
   function loadConvs() {
     return api('GET', '/api/conversations').then(function (d) {
       convs = d.items || [];
+      convsLoaded = true;
       renderList();
+      maybeShowHomeGuide();
     });
   }
 
@@ -452,9 +548,11 @@
     ]).then(function (rs) {
       friends = rs[0].friends || [];
       requests = rs[1].requests || [];
+      friendsLoaded = true;
       reqBadge.hidden = requests.length === 0;
       reqBadge.textContent = requests.length;
       renderList();
+      maybeShowHomeGuide();
     });
   }
 
@@ -489,6 +587,8 @@
       .then(function (r) { return r.ok ? r.json() : { messages: [] }; })
       .then(function (d) {
         var list = d.messages || [];
+        aiRoundCount = countAIRounds(list);
+        maybeShowAIExportGuide();
         if (!list.length) {
           addMsg('other', '你好，我是小鲸。有什么想聊的？');
           return;
@@ -506,6 +606,9 @@
   /* ---------- 打开会话 ---------- */
   function openConv(c) {
     aiMode = false;
+    aiRoundCount = 0;
+    if (aiExportGuide) aiExportGuide.hidden = true;
+    dismissHomeGuide();
     setStage(false);                      /* 好友会话不显示场景 */
     document.getElementById('btnRemove').hidden = false;
     document.getElementById('btnExport').hidden = true;
@@ -546,6 +649,9 @@
 
   function startChatWith(f) {
     aiMode = false;
+    aiRoundCount = 0;
+    if (aiExportGuide) aiExportGuide.hidden = true;
+    dismissHomeGuide();
     setStage(false);                      /* 好友会话不显示场景 */
     document.getElementById('btnRemove').hidden = false;
     document.getElementById('btnExport').hidden = true;
@@ -814,6 +920,7 @@
   /* ---------- AI 流式发送 ---------- */
   function sendAI(text) {
     aiBusy = true;
+    var gotReply = false;
     addMsg('me', text);
     var bubble = addMsg('other', '…');
     bubble.classList.add('typing');
@@ -853,6 +960,7 @@
               try { obj = JSON.parse(data); } catch (e) { return; }
               if (ev === 'delta') {
                 bubble.classList.remove('typing');
+                if (obj.text) gotReply = true;
                 bubble.textContent += obj.text || '';
                 scrollBottom();
               } else if (ev === 'end') {
@@ -860,7 +968,8 @@
                 if (obj.emotion) reactMood(obj.emotion);
               } else if (ev === 'error') {
                 bubble.classList.remove('typing');
-                bubble.textContent = obj.message || '出错了';
+                gotReply = false;
+                bubble.textContent = obj.message || AI_UNAVAILABLE;
               }
             });
             return pump();
@@ -868,12 +977,17 @@
         }
         return pump();
       })
-      .catch(function (e) {
+      .catch(function () {
         bubble.classList.remove('typing');
-        bubble.textContent = e.message;
+        gotReply = false;
+        bubble.textContent = AI_UNAVAILABLE;
       })
       .finally(function () {
         bubble.textContent = bubble.textContent.replace(EMO_RE, '').trim();
+        if (gotReply && bubble.textContent && bubble.textContent !== '…') {
+          aiRoundCount++;
+          maybeShowAIExportGuide();
+        }
         aiBusy = false;
         sending = false;
         sendBtn.disabled = false;
@@ -896,6 +1010,7 @@
   var foundUser = null;
 
   function openAdd() {
+    dismissHomeGuide();
     addModal.hidden = false;
     searchNo.value = '';
     searchResult.hidden = true;
@@ -980,6 +1095,7 @@
 
   document.getElementById('btnExport').addEventListener('click', function () {
     if (!aiMode) return;
+    dismissAIExportGuide();
     window.location.href = '/api/chat/export?format=md';
     toast('对话记录已开始下载');
   });
@@ -1012,6 +1128,14 @@
   }
 
   /* ---------- 启动 ---------- */
+  if (document.getElementById('homeGuideDismiss')) {
+    document.getElementById('homeGuideDismiss').addEventListener('click', dismissHomeGuide);
+  }
+  if (document.getElementById('aiExportGuideDismiss')) {
+    document.getElementById('aiExportGuideDismiss')
+      .addEventListener('click', dismissAIExportGuide);
+  }
+
   document.addEventListener('click', function (e) {
     if (ctxMenu && !ctxMenu.contains(e.target)) closeCtxMenu();
   });

@@ -1,8 +1,9 @@
 # 项目交接说明（给外部协作者）
 
 > 目的：让协作者基于**当前真实代码**工作，而不是文档旧快照。
-> 事实来源：`git log`、实际源码、`pytest` 结果。最后核对：2026-11-19，HEAD=`acf0b9a`。
+> 事实来源：`git log`、实际源码、`pytest` 结果。最后核对：2026-11-19，HEAD=`f9b6aa5`，且工作区包含本轮尚未提交的功能改动。
 > 架构与决策见 `PROJECT_CHARTER.md`，操作红线见 `README.md §4A/§4B`。
+> **2026-11-19 交付原则**：安全稳定是底线；五子棋 AI、离线邀请、新手引导已本地实现并通过 51 项测试，后续游戏经 hi 拍板暂缓。先本地实现与测试，不擅自修改生产服务器。
 
 ---
 
@@ -12,8 +13,8 @@
 
 | 旧说法 | 当前实际 |
 |---|---|
-| Charter 写 6 个 schema、README 写 9 个 | 已统一为 10 个（新增 3 个幂等迁移），deploy 的 `glob` 全量执行 |
-| Charter 13 项测试、README 32 项 | 已统一为 **41 项 pytest**（4 文件），`pytest` 全过 |
+| 早期文档写 6 / 9 / 10 个 schema | 当前为 **11 个**（含 4 个幂等迁移），deploy 的 `glob` 全量执行 |
+| 早期文档写 13 / 32 / 41 项测试 | 当前为 **51 项 pytest**（6 文件），本地全过 |
 | Charter 说"无 WebSocket" | 已改：SSE（AI 流式）+ IM 轮询 + Socket.IO（对局，本地已实现）|
 | 无右键菜单 | 已实现引用/转发/删除/多选；且额外加了「⋯」按钮入口（右键在触摸设备和部分浏览器不可靠）|
 | SSRF、admin 白名单、headers、终局房间、认输覆盖、AI 扣费、未读误标、UA 转义、和棋、重置令牌竞态…… | 两轮审查共修 26 + 11 项，均已提交 |
@@ -34,8 +35,8 @@
 
 **2.2 增量部署脚本曾遗漏数据库迁移（已修，但需部署验证）**
 - 原问题：`deploy_incremental.py` 只传代码不执行 `schema_message_v2.sql`。新 `db.py` 的 SELECT 含 `quote_id/deleted_by_a/deleted_by_b/forward_from`，老表无这些列 → 同步后消息页 500。全量 `deploy.py` 会重置 `SECRET_KEY`（BYOK Key 永久报废），不能用于救场。
-- 已修（提交 `acf0b9a`）：迁移纳入增量脚本，上传代码前校验 4 列存在，缺失即中止。
-- 待验证：这个修复本身**尚未在服务器跑过**，需随 2.1 一起验证。
+- 已修并提交：消息表 4 列迁移纳入增量脚本；本轮又新增 `schema_game_ai.sql`（`game_invite` 表、`game_record` 的 AI 标识与可空 `conv_id`），上传代码前会校验表、列与可空性，缺失即中止。
+- 待验证：这些迁移**尚未在服务器跑过**，需随 2.1 一起先备份再验证。
 
 ### P1 — 产品决策阻塞
 
@@ -49,8 +50,8 @@
 
 | 问题 | 证据 | 建议 |
 |---|---|---|
-| 无自动备份 | README/总纲均标"备份仍缺" | 上线前建定时 mysqldump + 异地存储 + 恢复演练 |
-| 无 CI | 全库无 workflow 配置 | 最小 CI：提交跑 `pytest` + `node --check` + `py_compile` |
+| 无自动备份 | 已有 `register/deploy/backup_mysql.sh`，但无调度 | 上线前建定时 mysqldump + 异地存储 + 恢复演练 |
+| CI 尚未实跑 | 已新增 `.github/workflows/ci.yml` | 首次推送后在 GitHub Actions 验证 `pytest` + `node --check` + `py_compile` + 自检 |
 | 生产同步 worker，WebSocket 退化长轮询 | `deploy.py` gthread worker | 待拍板后切 `GeventWebSocketWorker` + nginx Upgrade |
 | 服务器 SSH 密钥未轮换 | 总纲标"待 hi 拍板" | 安排轮换并更新部署脚本 |
 | DNS 重绑定仅部分缓解 | `_base_url_safe()` 校验时解析一次，`requests.post` 重新解析 | 公网化前 pin IP（自定义 adapter + Host 头 + server_hostname）|
@@ -99,10 +100,13 @@
 
 ```bash
 cd D:/MySQL
-pytest register/tests/ -q          # 应 41 passed
-python -m py_compile register/app.py register/db.py
+pytest register/tests/ -q          # 应 51 passed
+python -m compileall -q register webapp scripts
 node --check register/static/im.js
-git status --short                 # 应为空
+node --check register/static/game.js
+python webapp/tests/selftest.py
+bash -n register/deploy/backup_mysql.sh
+git status --short                 # 本轮改动尚未提交，应能看到改动清单
 ```
 
 部署（需 `MYSQL_PW` 与服务器备份确认）：

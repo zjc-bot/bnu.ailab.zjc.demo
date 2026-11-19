@@ -17,9 +17,25 @@
 .gm-friend-info { flex: 1; min-width: 0; }
 .gm-friend-name { font-size: 13px; font-weight: 500; }
 .gm-friend-no { font-size: 11px; color: var(--faint); font-family: ui-monospace, monospace; }
+.gm-ai-box, .gm-invites { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.gm-ai-row { display: flex; gap: 8px; align-items: center; }
+.gm-ai-row select, .gm-ai-row button { min-height: 32px; }
+.gm-ai-row select { flex: 1; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+.gm-invite { padding: 9px 0; border-bottom: 1px solid var(--line); }
+.gm-invite:last-child { border-bottom: 0; }
+.gm-invite-text { font-size: 12px; color: var(--muted); line-height: 1.6; }
+.gm-invite-btns { display: flex; gap: 8px; margin-top: 7px; }
+.gm-guide { margin: 6px; padding: 10px 12px; border: 1px solid #dbeafe; border-radius: 9px;
+  background: #f0f7ff; color: #374151; font-size: 12px; line-height: 1.6; }
+.gm-guide[hidden] { display: none; }
+.gm-guide-head { display: flex; gap: 10px; align-items: center; }
+.gm-guide-text { flex: 1; }
+.gm-guide button { border: 0; background: transparent; color: var(--primary); cursor: pointer;
+  font-family: inherit; font-size: 12px; white-space: nowrap; }
+.gm-guide button:hover { text-decoration: underline; }
 .gm-board-wrap { display: flex; flex-direction: column; align-items: center; gap: 14px; }
 .gm-status { font-size: 14px; color: var(--muted); min-height: 22px; text-align: center; }
-.gm-status b { color: var(--text); }
+.gm-status-error { color: #b91c1c; }
 .gm-board { display: grid; grid-template-columns: repeat(15, 34px); grid-template-rows: repeat(15, 34px);
   background: #dcb35c; border: 1px solid #8a6a2f; border-radius: 3px;
   box-shadow: var(--shadow); }
@@ -66,7 +82,14 @@
 <main class="wrap-wide">
   <div class="page-head">
     <h1>五子棋对战</h1>
-    <p>向好友发起对局，率先连成五子者获胜。落子由服务端校验，不可作弊。</p>
+    <p>与好友对局，或找小鲸练手；率先连成五子者获胜。落子由服务端校验，不可作弊。</p>
+  </div>
+
+  <div class="gm-guide" id="gmPageGuide" role="status" hidden>
+    <div class="gm-guide-head">
+      <span class="gm-guide-text">先邀请好友，或直接和小鲸开一局；邀请会保存，好友上线后在「对战」页可见。</span>
+      <button id="gmPageGuideDismiss" type="button">知道了</button>
+    </div>
   </div>
 
   <div class="gm-layout">
@@ -86,13 +109,37 @@
         <p class="gm-empty">还没有好友，先去「消息」添加好友。</p>
         {% endfor %}
       </div>
-      <p class="gm-empty" style="margin-top:12px">邀请仅推送给同样停留在「对战」页的好友；请让对方也打开此页。</p>
+      <p class="gm-empty" style="margin-top:12px">邀请会保存 1 小时；好友上线后可在待处理邀请里接受或拒绝。</p>
+
+      <div class="gm-ai-box">
+        <h3>和小鲸练习</h3>
+        <div class="gm-ai-row">
+          <select id="gmDifficulty" aria-label="AI 难度">
+            <option value="easy">简单</option>
+            <option value="normal" selected>普通</option>
+            <option value="hard">困难</option>
+          </select>
+          <button class="btn primary sm2" id="gmAIStart" type="button">开始</button>
+        </div>
+        <p class="gm-empty">AI 在服务端选择合法着法，不使用外部模型。</p>
+      </div>
+
+      <div class="gm-invites" id="gmInvites" hidden>
+        <h3>待处理邀请</h3>
+        <div id="gmInviteList"></div>
+      </div>
     </section>
 
     <section class="card gm-side">
       <div class="gm-board-wrap">
-        <div class="gm-status" id="gmStatus">选择好友发起对局，或从消息中接受邀请</div>
+        <div class="gm-status" id="gmStatus">选择好友发起对局，或和小鲸开一局</div>
         <div class="gm-board" id="gmBoard"></div>
+        <div class="gm-guide" id="gmFirstMoveGuide" role="status" hidden>
+          <div class="gm-guide-head">
+            <span class="gm-guide-text">点交叉点落子，先连成五子者胜</span>
+            <button id="gmFirstMoveGuideDismiss" type="button">知道了</button>
+          </div>
+        </div>
         <div class="gm-actions">
           <button class="btn danger sm2" id="gmResign" type="button" disabled>认输</button>
           <button class="btn ghost sm2" id="gmLeave" type="button" disabled>离开</button>
@@ -111,7 +158,7 @@
           <td>{{ r.created_at }}</td>
           <td>{{ r.opponent_name or '已注销用户' }}</td>
           <td>{{ '先手' if r.player_a == user.id else '后手' }}</td>
-          <td>{{ '胜' if r.winner == user.id else ('负' if r.winner else '和') }} · {{ r.reason }}</td>
+          <td>{{ '胜' if r.winner == user.id else ('负' if r.winner else '和') }} · {{ r.reason_text or r.reason }}</td>
           <td>{{ r.steps }}</td>
         </tr>
         {% else %}
@@ -123,6 +170,6 @@
 </main>
 
 <script src="{{ url_for('static', filename='socket.io/socket.io.min.js') }}"></script>
-<script src="{{ url_for('static', filename='game.js') }}?v=2"></script>
+<script src="{{ url_for('static', filename='game.js') }}?v=3"></script>
 </body>
 </html>

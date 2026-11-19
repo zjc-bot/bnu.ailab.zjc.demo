@@ -6,7 +6,7 @@
 <meta name="csrf" content="{{ csrf }}">
 <title>消息 · BNU AI Lab</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=9">
-<link rel="stylesheet" href="{{ url_for('static', filename='im.css') }}?v=3">
+<link rel="stylesheet" href="{{ url_for('static', filename='im.css') }}?v=4">
 </head>
 <body class="im-page">
 
@@ -64,6 +64,15 @@
         </svg>
       </div>
       <p>选择左侧的联系人开始聊天</p>
+      <div class="im-guide im-home-guide" id="homeGuide" role="status" hidden>
+        <div class="im-guide-head">
+          <div class="im-guide-text">
+            <p>还没有联系人。去『添加好友』搜学号，开始第一段对话。</p>
+            <div class="im-guide-steps">① 添加好友 → ② 开始聊天 → ③ 找小鲸聊聊</div>
+          </div>
+          <button class="im-guide-dismiss" id="homeGuideDismiss" type="button">知道了</button>
+        </div>
+      </div>
       <button class="btn ghost sm2" id="btnAdd2" type="button">添加好友</button>
     </div>
 
@@ -86,6 +95,13 @@
             <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>
           </svg>
         </button>
+      </div>
+
+      <div class="im-guide im-export-guide" id="aiExportGuide" role="status" hidden>
+        <div class="im-guide-head">
+          <span class="im-guide-text">可以导出全部聊天记录</span>
+          <button class="im-guide-dismiss" id="aiExportGuideDismiss" type="button">知道了</button>
+        </div>
       </div>
 
       <div class="im-body" id="imBody"></div>
@@ -150,6 +166,6 @@
   </div>
 </div>
 
-<script src="{{ url_for('static', filename='im.js') }}?v=7"></script>
+<script src="{{ url_for('static', filename='im.js') }}?v=8"></script>
 </body>
 </html>

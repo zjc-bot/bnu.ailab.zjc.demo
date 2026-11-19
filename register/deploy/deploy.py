@@ -64,7 +64,7 @@ TABLES = [
     "app_user", "email_code", "admin_user", "access_log",
     "chat_message", "ai_usage", "ai_config", "user_ai_key",
     "friend_request", "friend", "conversation", "message",
-    "password_reset", "login_log", "game_record",
+    "password_reset", "login_log", "game_record", "game_invite",
 ]
 for t in TABLES:
     mysql(f"GRANT SELECT, INSERT, UPDATE, DELETE ON school.{t} TO 'studentapp'@'127.0.0.1'")
