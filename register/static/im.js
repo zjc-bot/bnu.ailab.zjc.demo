@@ -126,8 +126,8 @@
     });
     document.body.appendChild(menu);
     var w = 120, h = items.length * 33 + 8;
-    menu.style.left = Math.min(x, window.innerWidth - w - 8) + 'px';
-    menu.style.top = Math.min(y, window.innerHeight - h - 8) + 'px';
+    menu.style.left = Math.max(8, Math.min(x, window.innerWidth - w - 8)) + 'px';
+    menu.style.top = Math.max(8, Math.min(y, window.innerHeight - h - 8)) + 'px';
     ctxMenu = menu;
   }
 
@@ -175,6 +175,12 @@
 
   /* ---------- 多选批量 ---------- */
 
+  function setMsgActionsVisible(visible) {
+    document.querySelectorAll('.im-msg-more').forEach(function (b) {
+      b.style.display = visible ? '' : 'none';
+    });
+  }
+
   function enterMulti(firstId) {
     multiMode = true;
     selectedIds = new Set(firstId ? [firstId] : []);
@@ -182,6 +188,7 @@
       var cb = el.querySelector('.im-ms-check');
       if (cb) cb.style.display = '';
     });
+    setMsgActionsVisible(false);
     renderMultiBar();
   }
 
@@ -189,6 +196,7 @@
     multiMode = false;
     selectedIds.clear();
     document.querySelectorAll('.im-ms-check').forEach(function (cb) { cb.style.display = 'none'; });
+    setMsgActionsVisible(true);
     if (multiBar) { multiBar.remove(); multiBar = null; }
   }
 
@@ -651,8 +659,26 @@
     time.className = 'im-time' + (mine && m.read_at ? ' im-read' : '');
     time.textContent = shortTime(m.created_at) + (mine && m.read_at ? ' 已读' : '');
 
+    // 「⋯」按钮：右键之外的可靠入口（触摸设备 / 浏览器拦截右键时仍可用）
+    var more = document.createElement('button');
+    more.type = 'button';
+    more.className = 'im-msg-more';
+    more.textContent = '⋯';
+    more.title = '消息操作';
+    more.style.cssText = 'border:0;background:none;color:#9ca3af;font-size:18px;' +
+      'line-height:1;cursor:pointer;padding:0 6px;opacity:.45;align-self:center;flex:none;';
+    more.setAttribute('aria-label', '消息操作');
+    more.addEventListener('click', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      var r = more.getBoundingClientRect();
+      showCtxMenu(r.left - 110, r.bottom + 4, row);
+    });
+    row.addEventListener('mouseenter', function () { more.style.opacity = '1'; });
+    row.addEventListener('mouseleave', function () { more.style.opacity = '.45'; });
+
     wrap.append(bubble, time);
-    row.append(av, wrap);
+    row.append(av, wrap, more);
     bodyEl.appendChild(row);
 
     if (animate) {
