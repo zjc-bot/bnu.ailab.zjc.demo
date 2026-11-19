@@ -13,7 +13,6 @@
 
   if (!listEl || !bodyEl) return;
 
-  var tab = 'chats';
   var convs = [];
   var friends = [];
   var requests = [];
@@ -27,6 +26,30 @@
   var aiBusy = false;
   var EMO_RE = /\[\[emo:\w+\]\]/g;
   var AI_AVATAR = '/static/whale/avatar.webp?v=1';   /* 小鲸头像 */
+
+  /* ---------- 场景（像素蓝天白云，情绪联动） ---------- */
+  var stage = document.getElementById('imStage');
+  var stagePet = document.getElementById('stagePet');
+  var stageMood = document.getElementById('stageMood');
+  var MOOD_TEXT = {
+    happy: '开心～', sad: '有点难过', angry: '哼，生气了',
+    sleep: '困了…', surprised: '诶！', neutral: '在这里陪你'
+  };
+  var moodTimer = null;
+  function setStage(show) {
+    if (stage) stage.hidden = !show;
+  }
+  function reactMood(emo) {
+    if (!stagePet || !stageMood) return;
+    var key = MOOD_TEXT[emo] ? emo : 'neutral';
+    stagePet.dataset.emotion = key;
+    stageMood.textContent = MOOD_TEXT[key];
+    clearTimeout(moodTimer);
+    moodTimer = setTimeout(function () {
+      stagePet.dataset.emotion = 'neutral';
+      stageMood.textContent = MOOD_TEXT.neutral;
+    }, 3000);
+  }
 
   /* ---------- 工具 ---------- */
   function api(method, path, payload) {
@@ -98,63 +121,30 @@
     }
   }
 
-  /* ---------- 左栏渲染 ---------- */
+  /* ---------- 左栏渲染（合并：小鲸 + 申请 + 好友会话） ---------- */
   function renderList() {
     listEl.replaceChildren();
 
-    if (tab === 'chats') {
-      /* 固定的 AI 会话项，排在最顶部 */
-      var aiBtn = document.createElement('button');
-      aiBtn.type = 'button';
-      aiBtn.className = 'im-row im-ai-row' + (aiMode ? ' on' : '');
-      aiBtn.innerHTML =
-        '<img class="im-av im-ai-av" src="' + AI_AVATAR + '" alt="小鲸">' +
-        '<div class="im-row-info">' +
-          '<div class="im-row-top">' +
-            '<span class="im-row-name">小鲸 <span class="im-tag">AI</span></span>' +
-            '<span class="im-row-time">在线</span>' +
-          '</div>' +
-          '<div class="im-row-bottom">' +
-            '<span class="im-row-last">点我聊聊实验室的事</span>' +
-            '<span class="im-online-dot"></span>' +
-          '</div>' +
-        '</div>';
-      aiBtn.addEventListener('click', function () { openAI(); });
-      listEl.appendChild(aiBtn);
+    /* 小鲸：固定置顶，作为普通联系人出现 */
+    var aiBtn = document.createElement('button');
+    aiBtn.type = 'button';
+    aiBtn.className = 'im-row im-ai-row' + (aiMode ? ' on' : '');
+    aiBtn.innerHTML =
+      '<img class="im-av im-ai-av" src="' + AI_AVATAR + '" alt="小鲸">' +
+      '<div class="im-row-info">' +
+        '<div class="im-row-top">' +
+          '<span class="im-row-name">小鲸 <span class="im-tag">AI</span></span>' +
+          '<span class="im-row-time">在线</span>' +
+        '</div>' +
+        '<div class="im-row-bottom">' +
+          '<span class="im-row-last">点我聊聊实验室的事</span>' +
+          '<span class="im-online-dot"></span>' +
+        '</div>' +
+      '</div>';
+    aiBtn.addEventListener('click', function () { openAI(); });
+    listEl.appendChild(aiBtn);
 
-      if (!convs.length) {
-        var p = document.createElement('p');
-        p.className = 'im-empty-mini';
-        p.textContent = '还没有会话，点右上角 ＋ 加好友';
-        listEl.appendChild(p);
-        return;
-      }
-      convs.forEach(function (c) {
-        var btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'im-row' +
-          (c.id === activeConv ? ' on' : '') +
-          (c.unread > 0 ? ' unread' : '');
-        btn.innerHTML =
-          avatar(c.nickname, c.avatar_url) +
-          '<div class="im-row-info">' +
-            '<div class="im-row-top">' +
-              '<span class="im-row-name">' + esc(c.nickname) + '</span>' +
-              '<span class="im-row-time">' + esc(shortTime(c.last_at)) + '</span>' +
-            '</div>' +
-            '<div class="im-row-bottom">' +
-              '<span class="im-row-last">' + esc(c.last_text || '暂无消息') + '</span>' +
-              (c.unread > 0
-                ? '<span class="im-dot" title="' + c.unread + ' 条未读"></span>' : '') +
-            '</div>' +
-          '</div>';
-        btn.addEventListener('click', function () { openConv(c); });
-        listEl.appendChild(btn);
-      });
-      return;
-    }
-
-    /* 好友 tab：申请置顶 */
+    /* 好友申请：置顶显示 */
     requests.forEach(function (r) {
       var box = document.createElement('div');
       box.className = 'im-req';
@@ -165,22 +155,43 @@
 
       var btns = document.createElement('div');
       btns.className = 'im-req-btns';
-
       var yes = document.createElement('button');
-      yes.type = 'button';
-      yes.className = 'btn primary sm2';
-      yes.textContent = '同意';
+      yes.type = 'button'; yes.className = 'btn primary sm2'; yes.textContent = '同意';
       yes.addEventListener('click', function () { handleReq(r.id, true); });
-
       var no = document.createElement('button');
-      no.type = 'button';
-      no.className = 'btn ghost sm2';
-      no.textContent = '忽略';
+      no.type = 'button'; no.className = 'btn ghost sm2'; no.textContent = '忽略';
       no.addEventListener('click', function () { handleReq(r.id, false); });
-
       btns.append(yes, no);
       box.appendChild(btns);
       listEl.appendChild(box);
+    });
+
+    /* 好友列表：与会话数据合并，显示最后一条消息与未读 */
+    friends.forEach(function (f) {
+      var conv = convs.find(function (c) { return c.peer_id === f.id; });
+      var row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'im-row' +
+        (!aiMode && conv && conv.id === activeConv ? ' on' : '') +
+        (conv && conv.unread > 0 ? ' unread' : '');
+      var last = conv ? (conv.last_text || '暂无消息') : '发条消息开始聊天吧';
+      row.innerHTML =
+        avatar(f.nickname, f.avatar_url) +
+        '<div class="im-row-info">' +
+          '<div class="im-row-top">' +
+            '<span class="im-row-name">' + esc(f.nickname) + '</span>' +
+            (conv ? '<span class="im-row-time">' + esc(shortTime(conv.last_at)) + '</span>' : '') +
+          '</div>' +
+          '<div class="im-row-bottom">' +
+            '<span class="im-row-last">' + esc(last) + '</span>' +
+            (conv && conv.unread > 0
+              ? '<span class="im-dot" title="' + conv.unread + ' 条未读"></span>' : '') +
+          '</div>' +
+        '</div>';
+      row.addEventListener('click', function () {
+        if (conv) openConv(conv); else startChatWith(f);
+      });
+      listEl.appendChild(row);
     });
 
     if (!friends.length && !requests.length) {
@@ -188,22 +199,7 @@
       empty.className = 'im-empty-mini';
       empty.textContent = '还没有好友，点右上角 ＋ 添加';
       listEl.appendChild(empty);
-      return;
     }
-
-    friends.forEach(function (f) {
-      var row = document.createElement('button');
-      row.type = 'button';
-      row.className = 'im-row';
-      row.innerHTML =
-        avatar(f.nickname, f.avatar_url) +
-        '<div class="im-row-info">' +
-          '<div class="im-row-top"><span class="im-row-name">' + esc(f.nickname) + '</span></div>' +
-          '<div class="im-row-bottom"><span class="im-row-last">' + esc(f.real_name) + '</span></div>' +
-        '</div>';
-      row.addEventListener('click', function () { startChatWith(f); });
-      listEl.appendChild(row);
-    });
   }
 
   /* ---------- 加载 ---------- */
@@ -232,6 +228,8 @@
     aiMode = true;
     activeConv = 0;
     activePeer = null;
+    setStage(true);                       /* 显示像素场景 */
+    reactMood('neutral');
     document.getElementById('btnRemove').hidden = true;
     document.getElementById('btnExport').hidden = false;
     renderList();
@@ -273,6 +271,7 @@
   /* ---------- 打开会话 ---------- */
   function openConv(c) {
     aiMode = false;
+    setStage(false);                      /* 好友会话不显示场景 */
     document.getElementById('btnRemove').hidden = false;
     document.getElementById('btnExport').hidden = true;
     document.getElementById('headAv').classList.remove('ai');
@@ -307,6 +306,7 @@
 
   function startChatWith(f) {
     aiMode = false;
+    setStage(false);                      /* 好友会话不显示场景 */
     document.getElementById('btnRemove').hidden = false;
     document.getElementById('btnExport').hidden = true;
     document.getElementById('headAv').classList.remove('ai');
@@ -314,21 +314,15 @@
     var found = convs.find(function (c) { return c.peer_id === f.id; });
     if (found) { openConv(found); return; }
 
-    blank.hidden = true;
-    chat.hidden = false;
-    activeConv = 0;
-    activePeer = f;
-    document.getElementById('headName').textContent = f.nickname;
-    document.getElementById('headSub').textContent = f.real_name + ' · ' + f.student_no;
-
-    bodyEl.replaceChildren();
-    var tip = document.createElement('p');
-    tip.className = 'im-date';
-    tip.textContent = '发条消息开始聊天吧';
-    bodyEl.appendChild(tip);
-    lastDate = '';
-    lastSender = null;
-    lastMsgId = 0;
+    /* 新好友尚无会话：先幂等建会话，成功后当作普通会话打开。
+       否则 activeConv=0 会导致 send() 拦截，第一条消息永远发不出去。 */
+    api('POST', '/api/conversations', { peer_id: f.id })
+      .then(function (d) {
+        openConv({ id: d.id, peer_id: f.id, nickname: f.nickname,
+                   real_name: f.real_name, student_no: f.student_no,
+                   avatar_url: f.avatar_url });
+      })
+      .catch(function (e) { toast(e.message); });
   }
 
   /* ---------- 消息渲染 ---------- */
@@ -463,13 +457,18 @@
     if (!text || sending) return;
     if (aiBusy) return;
 
+    if (!aiMode && !activeConv) {
+      /* 会话尚未建好（新好友点击后接口在途），保留输入内容，提示重试 */
+      toast('会话准备中，请稍后再发');
+      return;
+    }
+
     sending = true;
     sendBtn.disabled = true;
     input.value = '';
     autoGrow();
 
     if (aiMode) { sendAI(text); return; }
-    if (!activeConv) { toast('请先选择一个会话'); sending = false; sendBtn.disabled = false; return; }
 
     var sendConv = activeConv;
     api('POST', '/api/messages', { conv: sendConv, content: text })
@@ -541,6 +540,9 @@
                 bubble.classList.remove('typing');
                 bubble.textContent += obj.text || '';
                 scrollBottom();
+              } else if (ev === 'end') {
+                /* 情绪联动：驱动场景里的像素角色换表情 */
+                if (obj.emotion) reactMood(obj.emotion);
               } else if (ev === 'error') {
                 bubble.classList.remove('typing');
                 bubble.textContent = obj.message || '出错了';
@@ -680,18 +682,6 @@
         loadConvs();
       })
       .catch(function (e) { toast(e.message); });
-  });
-
-  /* ---------- Tab 切换 ---------- */
-  document.querySelectorAll('.im-tab').forEach(function (b) {
-    b.addEventListener('click', function () {
-      document.querySelectorAll('.im-tab').forEach(function (x) {
-        x.classList.remove('on');
-      });
-      b.classList.add('on');
-      tab = b.dataset.tab;
-      renderList();
-    });
   });
 
   /* ---------- 提示 ---------- */

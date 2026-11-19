@@ -1140,6 +1140,24 @@ def api_conversations():
     return jsonify(items=items)
 
 
+@app.post("/api/conversations")
+@login_required
+def api_ensure_conversation():
+    """点开新好友时幂等建会话：仅允许与好友建立，防越权。"""
+    if not _api_csrf_ok():
+        return jsonify(error="CSRF 校验失败"), 403
+    d = request.get_json(silent=True) or {}
+    try:
+        peer = int(d.get("peer_id") or 0)
+    except (TypeError, ValueError):
+        return jsonify(error="参数错误"), 400
+    uid = session["uid"]
+    if peer == uid or not db.is_friend(uid, peer):
+        return jsonify(error="对方不是你的好友"), 403
+    cid = db.ensure_conversation(uid, peer)
+    return jsonify(ok=True, id=cid)
+
+
 @app.get("/api/messages")
 @login_required
 def api_messages():

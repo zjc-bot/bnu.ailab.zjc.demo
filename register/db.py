@@ -737,6 +737,25 @@ def get_conversation(conv_id):
             return cur.fetchone()
 
 
+def ensure_conversation(uid_a, uid_b):
+    """取或建两人的单聊会话，返回会话 id。
+
+    给「点开一个新好友直接发消息」用：此时会话尚未建立。
+    user_a/user_b 固定小 id 在前，配合 uk_pair 唯一键保证幂等；
+    并发下 INSERT 冲突则以 ON DUPLICATE KEY 兜底。
+    """
+    a, b = sorted((int(uid_a), int(uid_b)))
+    with connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO conversation(user_a, user_b) VALUES(%s, %s) "
+                "ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id)",
+                (a, b),
+            )
+            conn.commit()
+            return cur.lastrowid
+
+
 def get_pair_conversation(uid_a, uid_b):
     """按两个用户 id 取会话（对局房间用）。小 id 在前。"""
     a, b = sorted((int(uid_a), int(uid_b)))

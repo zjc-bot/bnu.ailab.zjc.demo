@@ -44,11 +44,8 @@
       </button>
     </div>
 
-    <div class="im-tabs" role="tablist">
-      <button class="im-tab on" type="button" data-tab="chats" role="tab">会话</button>
-      <button class="im-tab" type="button" data-tab="friends" role="tab">
-        好友 <span class="im-badge" id="reqBadge" hidden>0</span>
-      </button>
+    <div class="im-tabs" role="presentation">
+      <span class="im-side-label">联系人 <span class="im-badge" id="reqBadge" hidden>0</span></span>
     </div>
 
     <div class="im-list" id="imList">
@@ -92,6 +89,19 @@
       </div>
 
       <div class="im-body" id="imBody"></div>
+
+      <!-- 场景带：无边框，嵌在聊天区下方；AI 会话时角色随情绪变化 -->
+      <div class="im-stage" id="imStage" hidden
+           aria-label="小鲸的场景">
+        <div class="im-stage-scene" aria-hidden="true">
+          <span class="st-cloud c1"></span><span class="st-cloud c2"></span>
+          <span class="st-ground"></span>
+        </div>
+        <div class="im-stage-pet" id="stagePet" aria-hidden="true">
+          <img src="{{ url_for('static', filename='whale/avatar.webp') }}?v=1" alt="">
+        </div>
+        <div class="im-stage-mood" id="stageMood">在这里陪你</div>
+      </div>
 
       <div class="im-foot">
         <textarea id="imInput" rows="1" maxlength="2000"
