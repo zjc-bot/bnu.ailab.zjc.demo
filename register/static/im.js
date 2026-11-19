@@ -24,6 +24,16 @@
   var sending = false;
   var aiMode = false;          /* 当前是否在跟 AI 对话 */
   var aiBusy = false;
+
+  /* ---------- 消息交互（§9B）：引用 / 转发 / 删除 / 多选 ---------- */
+  var quotes = {};             // {msgId: {sender_id, content}} 引用摘要
+  var quoteTarget = null;      // 当前待引用的消息 {id, sender_id, content}
+  var multiMode = false;
+  var selectedIds = new Set();
+  var ctxMenu = null;
+  var quoteBar = null;
+  var multiBar = null;
+
   var EMO_RE = /\[\[emo:\w+\]\]/g;
   var AI_AVATAR = '/static/whale/avatar.webp?v=1';   /* 小鲸头像 */
 
@@ -73,6 +83,215 @@
     var d = document.createElement('div');
     d.textContent = s == null ? '' : String(s);
     return d.innerHTML;
+  }
+
+  /* ---------- 消息交互 UI（全部 JS 创建，不改模板/CSS，避免与并行改动冲突） ---------- */
+
+  function senderName(sid) {
+    if (sid === myId) return '我';
+    if (sid && activePeer && sid === activePeer.id) return activePeer.nickname;
+    return '对方';
+  }
+
+  function closeCtxMenu() {
+    if (ctxMenu) { ctxMenu.remove(); ctxMenu = null; }
+  }
+
+  function showCtxMenu(x, y, msgEl) {
+    closeCtxMenu();
+    if (aiMode || multiMode) return;
+    var mid = Number(msgEl.getAttribute('data-mid'));
+    if (!mid) return;
+    var m = msgEl._msg || { id: mid };
+    var items = [
+      ['引用', function () { setQuote(m); }],
+      ['转发', function () { openForward([mid]); }],
+      ['删除', function () { doDelete([mid]); }],
+      ['多选', function () { enterMulti(mid); }],
+      ['复制文本', function () { copyText(m.content || ''); }]
+    ];
+    var menu = document.createElement('div');
+    menu.style.cssText = 'position:fixed;z-index:300;background:#fff;border:1px solid #e5e7eb;' +
+      'border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.15);min-width:112px;padding:4px;';
+    items.forEach(function (it) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = it[0];
+      b.style.cssText = 'display:block;width:100%;text-align:left;border:0;background:none;' +
+        'padding:7px 12px;font-size:13px;color:#111827;cursor:pointer;border-radius:5px;';
+      b.onmouseenter = function () { b.style.background = '#f3f4f6'; };
+      b.onmouseleave = function () { b.style.background = 'none'; };
+      b.addEventListener('click', function () { closeCtxMenu(); it[1](); });
+      menu.appendChild(b);
+    });
+    document.body.appendChild(menu);
+    var w = 120, h = items.length * 33 + 8;
+    menu.style.left = Math.min(x, window.innerWidth - w - 8) + 'px';
+    menu.style.top = Math.min(y, window.innerHeight - h - 8) + 'px';
+    ctxMenu = menu;
+  }
+
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { toast('已复制'); })
+        .catch(function () { toast('复制失败'); });
+    } else {
+      toast('当前浏览器不支持自动复制');
+    }
+  }
+
+  function setQuote(m) {
+    quoteTarget = { id: m.id, sender_id: m.sender_id, content: (m.content || '').slice(0, 60) };
+    renderQuoteBar();
+    input.focus();
+  }
+
+  function clearQuote() {
+    quoteTarget = null;
+    renderQuoteBar();
+  }
+
+  function renderQuoteBar() {
+    if (quoteBar) { quoteBar.remove(); quoteBar = null; }
+    if (!quoteTarget) return;
+    var bar = document.createElement('div');
+    bar.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 10px;' +
+      'background:#f3f4f6;border-left:3px solid #1d4ed8;font-size:12px;color:#6b7280;';
+    var txt = document.createElement('span');
+    txt.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+    txt.textContent = '引用 ' + senderName(quoteTarget.sender_id) + '：' + quoteTarget.content;
+    var x = document.createElement('button');
+    x.type = 'button';
+    x.textContent = '×';
+    x.title = '取消引用';
+    x.style.cssText = 'border:0;background:none;font-size:18px;line-height:1;cursor:pointer;color:#9ca3af;';
+    x.addEventListener('click', clearQuote);
+    bar.append(txt, x);
+    var host = document.getElementById('imCompose');
+    if (!host) host = input.parentNode;
+    if (host && host.parentNode) host.parentNode.insertBefore(bar, host);
+    quoteBar = bar;
+  }
+
+  /* ---------- 多选批量 ---------- */
+
+  function enterMulti(firstId) {
+    multiMode = true;
+    selectedIds = new Set(firstId ? [firstId] : []);
+    document.querySelectorAll('.im-msg[data-mid]').forEach(function (el) {
+      var cb = el.querySelector('.im-ms-check');
+      if (cb) cb.style.display = '';
+    });
+    renderMultiBar();
+  }
+
+  function exitMulti() {
+    multiMode = false;
+    selectedIds.clear();
+    document.querySelectorAll('.im-ms-check').forEach(function (cb) { cb.style.display = 'none'; });
+    if (multiBar) { multiBar.remove(); multiBar = null; }
+  }
+
+  function renderMultiBar() {
+    if (multiBar) { multiBar.remove(); multiBar = null; }
+    if (!multiMode) return;
+    var bar = document.createElement('div');
+    bar.style.cssText = 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 10px;' +
+      'background:#eef2ff;border-bottom:1px solid #dbe3fe;font-size:12px;';
+    var info = document.createElement('span');
+    info.textContent = '已选 ' + selectedIds.size + ' 条（上限 50）';
+    info.style.cssText = 'flex:1;color:#3730a3;';
+    bar.appendChild(info);
+    var all = document.querySelectorAll('.im-msg[data-mid]');
+    var btnDefs = [
+      ['全选', function () {
+        all.forEach(function (el) { selectedIds.add(Number(el.getAttribute('data-mid'))); });
+        syncChecks(); renderMultiBar();
+      }],
+      ['取消', function () { selectedIds.clear(); syncChecks(); renderMultiBar(); }],
+      ['转发', function () { openForward(Array.from(selectedIds)); }],
+      ['删除', function () { doDelete(Array.from(selectedIds)); }],
+      ['退出', exitMulti]
+    ];
+    btnDefs.forEach(function (d) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = d[0];
+      b.style.cssText = 'border:1px solid #c7d2fe;background:#fff;color:#3730a3;' +
+        'padding:3px 10px;border-radius:5px;cursor:pointer;font-size:12px;';
+      b.addEventListener('click', d[1]);
+      bar.appendChild(b);
+    });
+    var chat = document.getElementById('imChat');
+    if (chat) chat.insertBefore(bar, chat.firstChild);
+    multiBar = bar;
+  }
+
+  function syncChecks() {
+    document.querySelectorAll('.im-msg[data-mid]').forEach(function (el) {
+      var cb = el.querySelector('.im-ms-check');
+      if (cb) cb.checked = selectedIds.has(Number(el.getAttribute('data-mid')));
+    });
+  }
+
+  function doDelete(ids) {
+    ids = (ids || []).filter(function (i) { return Number(i) > 0; });
+    if (!ids.length) { toast('请先选择消息'); return; }
+    if (!window.confirm('删除选中的 ' + ids.length + ' 条消息？只会从你的视图移除，对方仍能看到。')) return;
+    api('POST', '/api/messages/delete', { conv: activeConv, ids: ids })
+      .then(function (d) {
+        toast('已删除 ' + d.deleted + ' 条');
+        ids.forEach(function (id) {
+          var el = document.querySelector('.im-msg[data-mid="' + id + '"]');
+          if (el) el.remove();
+        });
+        seenIds = new Set(
+          Array.from(document.querySelectorAll('.im-msg[data-mid]'))
+            .map(function (el) { return Number(el.getAttribute('data-mid')); })
+        );
+        if (multiMode) { exitMulti(); }
+      })
+      .catch(function (e) { toast(e.message); });
+  }
+
+  function openForward(ids) {
+    ids = (ids || []).filter(function (i) { return Number(i) > 0; });
+    if (!ids.length) { toast('请先选择消息'); return; }
+    if (!friends.length) { toast('还没有好友可转发'); return; }
+    var menu = document.createElement('div');
+    menu.style.cssText = 'position:fixed;z-index:300;background:#fff;border:1px solid #e5e7eb;' +
+      'border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.15);min-width:180px;padding:4px;';
+    var label = document.createElement('div');
+    label.textContent = '转发到：';
+    label.style.cssText = 'padding:5px 10px;font-size:12px;color:#9ca3af;';
+    menu.appendChild(label);
+    friends.forEach(function (f) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = f.nickname || f.real_name;
+      b.style.cssText = 'display:block;width:100%;text-align:left;border:0;background:none;' +
+        'padding:7px 10px;font-size:13px;cursor:pointer;border-radius:5px;';
+      b.addEventListener('click', function () {
+        menu.remove();
+        var target = convs.find(function (c) { return c.peer_id === f.id; });
+        if (!target) { toast('先和对方聊一句，再转发'); return; }
+        api('POST', '/api/messages/forward',
+            { conv: activeConv, to_conv: target.id, ids: ids })
+          .then(function (d) { toast('已转发 ' + d.forwarded + ' 条'); if (multiMode) exitMulti(); })
+          .catch(function (e) { toast(e.message); });
+      });
+      menu.appendChild(b);
+    });
+    document.body.appendChild(menu);
+    var host = document.getElementById('imSend');
+    var r = host ? host.getBoundingClientRect() : { left: 100, top: 200 };
+    menu.style.left = Math.max(8, r.left - 180) + 'px';
+    menu.style.top = Math.max(8, r.top - friends.length * 33 - 40) + 'px';
+    setTimeout(function () {
+      document.addEventListener('click', function close(e) {
+        if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('click', close); }
+      });
+    }, 0);
   }
 
   function shortTime(v) {
@@ -289,8 +508,13 @@
       c.real_name + ' · ' + c.student_no;
 
     bodyEl.replaceChildren();
+    clearQuote();
+    if (multiMode) exitMulti();
+    closeCtxMenu();
     api('GET', '/api/messages?conv=' + c.id).then(function (d) {
+      if (activeConv !== c.id) return;        // 已切走则丢弃旧会话响应
       myId = d.me || 0;
+      quotes = d.quotes || {};
       var msgs = d.messages || [];
       renderFresh(msgs, myId);
       if (d.has_older) {
@@ -349,7 +573,27 @@
     var row = document.createElement('div');
     row.className = 'im-msg ' + (mine ? 'me' : 'other') +
                     ' ' + (same ? 'tight' : 'gap');
+    if (m.id) row.setAttribute('data-mid', m.id);
+    row._msg = m;                         // 右键菜单取原文用
     if (animate) row.style.opacity = '0';
+
+    // 多选复选框（默认隐藏，进入多选时显示）
+    var check = document.createElement('input');
+    check.type = 'checkbox';
+    check.className = 'im-ms-check';
+    check.style.cssText = 'display:none;align-self:center;margin-right:6px;cursor:pointer;';
+    check.checked = selectedIds.has(m.id);
+    check.addEventListener('change', function () {
+      if (check.checked) selectedIds.add(m.id); else selectedIds.delete(m.id);
+      renderMultiBar();
+    });
+    row.appendChild(check);
+
+    // 右键菜单
+    row.addEventListener('contextmenu', function (e) {
+      e.preventDefault();
+      showCtxMenu(e.clientX, e.clientY, row);
+    });
 
     var av = document.createElement('div');
     av.className = 'im-msg-av';
@@ -370,7 +614,38 @@
 
     var bubble = document.createElement('div');
     bubble.className = 'im-bubble';
-    bubble.textContent = m.content;      /* textContent 防 XSS */
+
+    // 转发标记（§9B.4：文本快照，from_conv 只作视觉提示）
+    if (m.forward_from) {
+      var fwd = document.createElement('div');
+      fwd.textContent = '转发消息';
+      fwd.style.cssText = 'font-size:11px;color:#6b7280;margin-bottom:4px;' +
+        'border-bottom:1px dashed #d1d5db;padding-bottom:3px;';
+      bubble.appendChild(fwd);
+    }
+
+    // 引用块（§9B.3）：摘要由服务端随消息返回，查不到则降级占位
+    if (m.quote_id) {
+      var q = quotes[String(m.quote_id)];
+      var qbox = document.createElement('div');
+      qbox.style.cssText = 'font-size:11.5px;color:#4b5563;background:rgba(0,0,0,.05);' +
+        'border-left:3px solid #1d4ed8;padding:4px 8px;margin-bottom:5px;border-radius:3px;' +
+        'cursor:pointer;max-width:260px;';
+      qbox.textContent = q
+        ? senderName(q.sender_id) + '：' + q.content
+        : '原消息已删除';
+      qbox.title = '点击跳到原消息';
+      qbox.addEventListener('click', function () {
+        var orig = document.querySelector('.im-msg[data-mid="' + m.quote_id + '"]');
+        if (orig) { orig.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+        else { toast('原消息不在当前加载范围内'); }
+      });
+      bubble.appendChild(qbox);
+    }
+
+    var body = document.createElement('div');
+    body.textContent = m.content;        /* textContent 防 XSS */
+    bubble.appendChild(body);
 
     var time = document.createElement('div');
     time.className = 'im-time' + (mine && m.read_at ? ' im-read' : '');
@@ -440,6 +715,9 @@
         var msgs = d.messages || [];
         if (msgs.length) {
           myId = d.me || myId;
+          if (d.quotes) {
+            Object.keys(d.quotes).forEach(function (k) { quotes[k] = d.quotes[k]; });
+          }
           msgs.forEach(function (m) { appendMsg(m, myId, true); });
           if (msgs[msgs.length - 1].id > lastMsgId) {
             lastMsgId = msgs[msgs.length - 1].id;
@@ -471,13 +749,16 @@
     if (aiMode) { sendAI(text); return; }
 
     var sendConv = activeConv;
-    api('POST', '/api/messages', { conv: sendConv, content: text })
+    var qid = quoteTarget ? quoteTarget.id : null;
+    clearQuote();
+    api('POST', '/api/messages', { conv: sendConv, content: text, quote_id: qid })
       .then(function (d) {
         if (activeConv !== sendConv) return;   // 已切走则不再操作当前视图
         appendMsg({
           id: d.id,                  // 带 id，配合 seenIds 防止在途 poll 重复追加
           sender_id: myId,
           content: text,
+          quote_id: d.quote_id,
           created_at: d.at,
           read_at: null
         }, myId, true);
@@ -697,6 +978,13 @@
   }
 
   /* ---------- 启动 ---------- */
+  document.addEventListener('click', function (e) {
+    if (ctxMenu && !ctxMenu.contains(e.target)) closeCtxMenu();
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { closeCtxMenu(); if (multiMode) exitMulti(); }
+  });
+
   input.addEventListener('input', autoGrow);
   input.addEventListener('keydown', function (e) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }

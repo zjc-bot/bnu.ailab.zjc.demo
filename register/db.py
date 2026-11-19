@@ -769,13 +769,17 @@ def get_pair_conversation(uid_a, uid_b):
             return cur.fetchone()
 
 
-def add_im_message(conv_id, sender_id, content):
-    """写入即时通讯消息（message 表），不要与 AI 对话的 add_chat_message 混用。"""
+def add_im_message(conv_id, sender_id, content, quote_id=None, forward_from=None):
+    """写入即时通讯消息（message 表），不要与 AI 对话的 add_chat_message 混用。
+
+    quote_id / forward_from 见总纲 §9B：引用不设外键，转发只存来源会话 id。
+    """
     with connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO message(conv_id, sender_id, content) VALUES(%s,%s,%s)",
-                (conv_id, sender_id, content),
+                "INSERT INTO message(conv_id, sender_id, content, quote_id, forward_from) "
+                "VALUES(%s,%s,%s,%s,%s)",
+                (conv_id, sender_id, content, quote_id, forward_from),
             )
             mid = cur.lastrowid
             cur.execute(
@@ -786,24 +790,110 @@ def add_im_message(conv_id, sender_id, content):
             return mid
 
 
-def list_messages(conv_id, after_id=0, limit=50):
-    """after_id>0 时只取新消息（轮询用）；否则取最近 N 条。"""
+# 消息查询字段（含 §9B 新增列），集中定义避免两处 SELECT 不一致
+_MSG_COLS = ("id, sender_id, content, quote_id, forward_from, "
+             "read_at, created_at")
+
+
+def list_messages(conv_id, after_id=0, limit=50, viewer_uid=None):
+    """after_id>0 时只取新消息（轮询用）；否则取最近 N 条。
+
+    viewer_uid 给定时过滤该用户已删除的消息（§9B.2 个人视图删除）。
+    """
     with connect() as conn:
         with conn.cursor() as cur:
+            # 在连接内查会话侧别，避免额外连接
+            cur.execute("SELECT user_a, user_b FROM conversation WHERE id=%s", (conv_id,))
+            conv = cur.fetchone()
+            if viewer_uid and conv:
+                col = ("deleted_by_a" if viewer_uid == conv["user_a"]
+                       else "deleted_by_b" if viewer_uid == conv["user_b"] else None)
+                if col is None:
+                    return []
+                where = f"AND {col}=0"
+            else:
+                where = ""
+
             if after_id:
                 cur.execute(
-                    "SELECT id, sender_id, content, read_at, created_at FROM message "
-                    "WHERE conv_id=%s AND id>%s ORDER BY id ASC LIMIT %s",
+                    f"SELECT {_MSG_COLS} FROM message "
+                    f"WHERE conv_id=%s AND id>%s {where} ORDER BY id ASC LIMIT %s",
                     (conv_id, after_id, limit),
                 )
                 return cur.fetchall()
             cur.execute(
-                "SELECT * FROM (SELECT id, sender_id, content, read_at, created_at "
-                "FROM message WHERE conv_id=%s ORDER BY id DESC LIMIT %s) t "
+                f"SELECT * FROM (SELECT {_MSG_COLS} FROM message "
+                f"WHERE conv_id=%s {where} ORDER BY id DESC LIMIT %s) t "
                 "ORDER BY id ASC",
                 (conv_id, limit),
             )
             return cur.fetchall()
+
+
+def soft_delete_messages(conv_id, uid, ids):
+    """批量置当前用户侧的删除标志，返回实际更新条数。
+
+    只改自己视图，对方不受影响；消息物理保留，导出/备份仍可追溯。
+    """
+    if not ids:
+        return 0
+    with connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT user_a, user_b FROM conversation WHERE id=%s", (conv_id,))
+            conv = cur.fetchone()
+            if not conv or uid not in (conv["user_a"], conv["user_b"]):
+                return 0
+            col = "deleted_by_a" if uid == conv["user_a"] else "deleted_by_b"
+            placeholders = ",".join(["%s"] * len(ids))
+            cur.execute(
+                f"UPDATE message SET {col}=1 "
+                f"WHERE conv_id=%s AND id IN ({placeholders})",
+                (conv_id, *ids),
+            )
+            affected = cur.rowcount
+            conn.commit()
+            return affected
+
+
+def get_messages_by_ids(conv_id, ids):
+    """按 id 批量取指定会话内的消息（转发用）。只返回存在的、属于该会话的。"""
+    if not ids:
+        return []
+    placeholders = ",".join(["%s"] * len(ids))
+    with connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"SELECT id, sender_id, content FROM message "
+                f"WHERE conv_id=%s AND id IN ({placeholders}) ORDER BY id ASC",
+                (conv_id, *ids),
+            )
+            return cur.fetchall()
+
+
+def is_message_in_conv(msg_id, conv_id):
+    """校验消息属于指定会话（引用防跨会话）。"""
+    with connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT 1 FROM message WHERE id=%s AND conv_id=%s LIMIT 1",
+                (msg_id, conv_id),
+            )
+            return cur.fetchone() is not None
+
+
+def get_quote_summaries(ids):
+    """按 id 批量取消息摘要，供引用块渲染。返回 {id: {sender_id, content}}。"""
+    if not ids:
+        return {}
+    placeholders = ",".join(["%s"] * len(ids))
+    with connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"SELECT id, sender_id, content FROM message "
+                f"WHERE id IN ({placeholders})",
+                tuple(ids),
+            )
+            return {r["id"]: r for r in cur.fetchall()}
 
 
 def mark_read_ids(conv_id, reader_id, ids):

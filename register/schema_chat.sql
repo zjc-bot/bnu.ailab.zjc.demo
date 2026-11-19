@@ -49,14 +49,19 @@ CREATE TABLE IF NOT EXISTS `conversation` (
   COMMENT='单聊会话';
 
 CREATE TABLE IF NOT EXISTS `message` (
-  `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `conv_id`    INT UNSIGNED NOT NULL,
-  `sender_id`  INT UNSIGNED NOT NULL,
-  `content`    TEXT NOT NULL,
-  `read_at`    DATETIME NULL COMMENT '为空表示未读',
-  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `id`           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `conv_id`      INT UNSIGNED NOT NULL,
+  `sender_id`    INT UNSIGNED NOT NULL,
+  `content`      TEXT NOT NULL,
+  `quote_id`     BIGINT UNSIGNED NULL COMMENT '引用的原消息 id；无外键，原消息可删',
+  `deleted_by_a` TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'user_a 已从自己视图删除',
+  `deleted_by_b` TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'user_b 已从自己视图删除',
+  `forward_from` INT UNSIGNED NULL COMMENT '转发来源会话 id，仅展示',
+  `read_at`      DATETIME NULL COMMENT '为空表示未读',
+  `created_at`   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_conv` (`conv_id`, `id`),
-  KEY `idx_unread` (`conv_id`, `read_at`)
+  KEY `idx_unread` (`conv_id`, `read_at`),
+  KEY `idx_quote` (`quote_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='单聊消息';

@@ -1171,15 +1171,24 @@ def api_messages():
     if not c or session["uid"] not in (c["user_a"], c["user_b"]):
         return jsonify(error="会话不存在"), 404
 
-    rows = db.list_messages(conv_id, after)
+    rows = db.list_messages(conv_id, after, viewer_uid=session["uid"])
     # 只标记本次实际返回的消息：先查后标，避免把未展示的更早未读误标。
     if not after and rows:
         db.mark_read_ids(conv_id, session["uid"], [r["id"] for r in rows])
 
+    # 引用块摘要：服务端一次性回传，前端不用逐条再请求
+    quote_ids = [r["quote_id"] for r in rows if r.get("quote_id")]
+    quotes = {}
+    if quote_ids:
+        raw = db.get_quote_summaries(quote_ids)
+        quotes = {str(k): {"sender_id": v["sender_id"],
+                           "content": (v["content"] or "")[:60]}
+                  for k, v in raw.items()}
+
     # 首屏只取 50 条：告知前端还有更早消息，避免误以为已读完整会话
     has_older = bool(not after and len(rows) >= 50 and db.has_older_messages(conv_id, rows[0]["id"] if rows else 0))
     return jsonify(messages=[_row_dict(r) for r in rows],
-                   me=session["uid"], has_older=has_older)
+                   me=session["uid"], has_older=has_older, quotes=quotes)
 
 
 @app.post("/api/messages")
@@ -1206,9 +1215,99 @@ def api_send_message():
     if not c or session["uid"] not in (c["user_a"], c["user_b"]):
         return jsonify(error="会话不存在"), 404
 
-    mid = db.add_im_message(conv_id, session["uid"], content)
-    return jsonify(ok=True, id=mid,
+    # 引用：必须属于当前会话，否则按无引用处理（原消息刚删不应阻断发送）
+    quote_id = d.get("quote_id")
+    if quote_id is not None:
+        try:
+            quote_id = int(quote_id)
+        except (TypeError, ValueError):
+            quote_id = None
+        if quote_id and not db.is_message_in_conv(quote_id, conv_id):
+            quote_id = None
+
+    mid = db.add_im_message(conv_id, session["uid"], content,
+                            quote_id=quote_id)
+    return jsonify(ok=True, id=mid, quote_id=quote_id,
                    at=time.strftime("%Y-%m-%d %H:%M:%S"))
+
+
+@app.post("/api/messages/delete")
+@login_required
+def api_delete_messages():
+    """批量删除（个人视图）：只置当前用户侧标志，对方不受影响。"""
+    if not _api_csrf_ok():
+        return jsonify(error="CSRF 校验失败"), 403
+    d = request.get_json(silent=True) or {}
+    try:
+        conv_id = int(d.get("conv") or 0)
+    except (TypeError, ValueError):
+        return jsonify(error="参数错误"), 400
+    c = db.get_conversation(conv_id)
+    if not c or session["uid"] not in (c["user_a"], c["user_b"]):
+        return jsonify(error="会话不存在"), 404
+
+    ids = d.get("ids")
+    if not isinstance(ids, list) or not ids:
+        return jsonify(error="请选择要删除的消息"), 400
+    if len(ids) > 50:
+        return jsonify(error="一次最多删除 50 条，请分批操作"), 400
+    if any(not isinstance(i, int) or isinstance(i, bool) or i <= 0 for i in ids):
+        return jsonify(error="参数错误"), 400
+
+    n = db.soft_delete_messages(conv_id, session["uid"], ids)
+    return jsonify(ok=True, deleted=n)
+
+
+@app.post("/api/messages/forward")
+@login_required
+def api_forward_messages():
+    """批量转发：把原文作为新消息逐条发到目标好友会话（文本快照）。"""
+    if not _api_csrf_ok():
+        return jsonify(error="CSRF 校验失败"), 403
+    if not _hit(f"msg:{session['uid']}", 120, 60):
+        return jsonify(error="操作太快了，歇一下"), 429
+    d = request.get_json(silent=True) or {}
+    try:
+        conv_id = int(d.get("conv") or 0)
+        to_conv = int(d.get("to_conv") or 0)
+    except (TypeError, ValueError):
+        return jsonify(error="参数错误"), 400
+    c = db.get_conversation(conv_id)
+    if not c or session["uid"] not in (c["user_a"], c["user_b"]):
+        return jsonify(error="会话不存在"), 404
+
+    ids = d.get("ids")
+    if not isinstance(ids, list) or not ids:
+        return jsonify(error="请选择要转发的消息"), 400
+    if len(ids) > 50:
+        return jsonify(error="一次最多转发 50 条，请分批操作"), 400
+    if any(not isinstance(i, int) or isinstance(i, bool) or i <= 0 for i in ids):
+        return jsonify(error="参数错误"), 400
+
+    # 目标会话必须是好友关系
+    tc = db.get_conversation(to_conv)
+    if not tc:
+        return jsonify(error="目标会话不存在"), 404
+    peer = tc["user_b"] if tc["user_a"] == session["uid"] else tc["user_a"]
+    if session["uid"] not in (tc["user_a"], tc["user_b"]) or not db.is_friend(session["uid"], peer):
+        return jsonify(error="只能转发给好友"), 403
+
+    # 取原消息：必须在源会话内
+    src = db.get_messages_by_ids(conv_id, ids)
+    if not src:
+        return jsonify(error="没有可转发的消息"), 400
+
+    name_cache = {}
+    sent = 0
+    for m in src:
+        sid = m["sender_id"]
+        if sid not in name_cache:
+            u = db.get_user(sid)
+            name_cache[sid] = (u or {}).get("nickname") or (u or {}).get("real_name") or "某位成员"
+        text = f"「转发自 {name_cache[sid]}」\n{m['content']}"
+        db.add_im_message(to_conv, session["uid"], text, forward_from=conv_id)
+        sent += 1
+    return jsonify(ok=True, forwarded=sent)
 
 
 @app.post("/api/messages/read")
