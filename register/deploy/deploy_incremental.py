@@ -8,6 +8,8 @@
 """
 
 import os
+import shlex
+
 import paramiko
 
 HOST = os.environ.get("DEPLOY_HOST", "47.118.28.10")
@@ -35,15 +37,24 @@ def mysql(sql, t=120):
     with sftp.file("/tmp/_dml.sql", "w") as f:
         f.write(sql + ";\n")
     sftp.close()
-    out = run(f"mysql -N -uroot -p'{MYSQL_PW}' < /tmp/_dml.sql 2>&1; rm -f /tmp/_dml.sql", t)
-    return out
+    # 密码只通过短生命周期环境变量传给远端 mysql，避免出现在命令行或被打印。
+    out = run(
+        f"MYSQL_PWD={shlex.quote(MYSQL_PW)} mysql -N -uroot < /tmp/_dml.sql 2>&1; "
+        "rm -f /tmp/_dml.sql",
+        t,
+    )
+    lines = [
+        line for line in out.splitlines()
+        if "Using a password on the command line interface can be insecure" not in line
+    ]
+    return "\n".join(lines).strip()
 
 
 print("=== 1. 建 game_record 表（幂等）===")
 sftp = c.open_sftp()
 sftp.put(os.path.join(LOCAL, "schema_game.sql"), "/tmp/game_schema.sql")
 sftp.close()
-print(" ", run(f"mysql -uroot -p'{MYSQL_PW}' < /tmp/game_schema.sql 2>&1 | grep -v Warning; rm -f /tmp/game_schema.sql") or "OK")
+print(" ", run(f"MYSQL_PWD={shlex.quote(MYSQL_PW)} mysql -uroot < /tmp/game_schema.sql 2>&1 | grep -v Warning; rm -f /tmp/game_schema.sql") or "OK")
 print("  确认:", mysql("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='school' AND table_name='game_record'"))
 
 print("\n=== 1b. 消息交互 v2 加列（幂等，必须先于代码上传）===")
@@ -53,7 +64,7 @@ print("\n=== 1b. 消息交互 v2 加列（幂等，必须先于代码上传）==
 sftp = c.open_sftp()
 sftp.put(os.path.join(LOCAL, "schema_message_v2.sql"), "/tmp/message_v2.sql")
 sftp.close()
-print(" ", run(f"mysql -uroot -p'{MYSQL_PW}' < /tmp/message_v2.sql 2>&1 | grep -v Warning; rm -f /tmp/message_v2.sql") or "OK")
+print(" ", run(f"MYSQL_PWD={shlex.quote(MYSQL_PW)} mysql -uroot < /tmp/message_v2.sql 2>&1 | grep -v Warning; rm -f /tmp/message_v2.sql") or "OK")
 cols = mysql(
     "SELECT GROUP_CONCAT(COLUMN_NAME) FROM information_schema.COLUMNS "
     "WHERE TABLE_SCHEMA='school' AND TABLE_NAME='message' "
@@ -68,7 +79,7 @@ print("\n=== 1c. 游戏邀请表 + AI 对战迁移（幂等，必须先于代码
 sftp = c.open_sftp()
 sftp.put(os.path.join(LOCAL, "schema_game_ai.sql"), "/tmp/game_ai.sql")
 sftp.close()
-print(" ", run(f"mysql -uroot -p'{MYSQL_PW}' < /tmp/game_ai.sql 2>&1 | grep -v Warning; rm -f /tmp/game_ai.sql") or "OK")
+print(" ", run(f"MYSQL_PWD={shlex.quote(MYSQL_PW)} mysql -uroot < /tmp/game_ai.sql 2>&1 | grep -v Warning; rm -f /tmp/game_ai.sql") or "OK")
 schema_ok = mysql(
     "SELECT CONCAT_WS(',', "
     "(SELECT COUNT(*) FROM information_schema.tables "
@@ -80,8 +91,9 @@ schema_ok = mysql(
     " WHERE TABLE_SCHEMA='school' AND TABLE_NAME='game_record' "
     "   AND COLUMN_NAME='conv_id' AND IS_NULLABLE='YES'))"
 )
-print("  校验 [game_invite, ai_difficulty, conv_id nullable]:", schema_ok)
-if schema_ok != "1,1,1":
+schema_value = schema_ok.strip().splitlines()[-1].strip() if schema_ok.strip() else ""
+print("  校验 [game_invite, ai_difficulty, conv_id nullable]:", schema_value)
+if schema_value != "1,1,1":
     raise SystemExit("AI 对战迁移未就绪，中止部署（避免上传代码后游戏页失败）")
 
 print("\n=== 2. 授权 app_user 对战表 ===")
@@ -121,7 +133,12 @@ sftp.close()
 print("\n=== 4. 安装新依赖 ===")
 out = run(f"cd {REMOTE} && ./venv/bin/pip install -q -r requirements.txt 2>&1 | tail -5", 600)
 print(" ", out or "OK")
-print("  校验:", run(f"cd {REMOTE} && ./venv/bin/python -c \"import flask_socketio,gevent;print('socketio',flask_socketio.__version__,'gevent',gevent.__version__)\""))
+# flask_socketio 不再暴露 __version__（新版会抛 AttributeError），改用包元数据取版本。
+print("  校验:", run(
+    f"cd {REMOTE} && ./venv/bin/python -c \""
+    "import importlib.metadata as m, flask_socketio, gevent; "
+    "print('socketio', m.version('flask-socketio'), 'gevent', gevent.__version__)\""
+))
 
 print("\n=== 5. 保留 .env，仅确认存在 ===")
 print(" ", run(f"ls -l {REMOTE}/.env && grep -c '^SECRET_KEY=' {REMOTE}/.env"))

@@ -1,9 +1,9 @@
 # 项目交接说明（给外部协作者）
 
 > 目的：让协作者基于**当前真实代码**工作，而不是文档旧快照。
-> 事实来源：`git log`、实际源码、`pytest` 结果。最后核对：2026-11-19，HEAD=`f9b6aa5`，且工作区包含本轮尚未提交的功能改动。
+> 事实来源：`git log`、实际源码、`pytest` 结果。最后核对：2026-11-19；核心功能提交 `8766e26` 已推送 `origin/main`，以 `git log -1` 和 GitHub Actions run `44507640518` 为准。
 > 架构与决策见 `PROJECT_CHARTER.md`，操作红线见 `README.md §4A/§4B`。
-> **2026-11-19 交付原则**：安全稳定是底线；五子棋 AI、离线邀请、新手引导已本地实现并通过 51 项测试，后续游戏经 hi 拍板暂缓。先本地实现与测试，不擅自修改生产服务器。
+> **2026-11-19 交付原则**：安全稳定是底线；五子棋 AI、离线邀请、新手引导已实现、通过 51 项测试，并完成服务器增量部署与核验；后续游戏经 hi 拍板暂缓。日常仍遵循"先本地实现与回归验证，生产变更先备份并经确认"。
 
 ---
 
@@ -25,18 +25,19 @@
 
 ## 2. 当前真实开放问题（按优先级）
 
-### P0 — 阻塞性
+### P0 — 原阻塞项，2026-11-19 已全部解除
 
-**2.1 本地代码与服务器不同步**
-- 现象：用户实测消息右键无效，弹出的是浏览器原生菜单。
-- 根因：代码只在本地 `D:/MySQL`，服务器 `/opt/bnu-register` 仍是旧版。我从未执行部署。
-- 证据：所有修复仅在本地 git；`deploy_incremental.py` 是唯一同步路径。
-- 下一步：需 `MYSQL_PW` + 服务器已备份确认，执行增量部署。**注意：这是运维动作，不是代码问题。**
+**2.1 本地代码与服务器不同步（已解除）**
+- 原问题：用户实测消息右键无效，弹出浏览器原生菜单；根因是代码只在本地 `D:/MySQL`，服务器 `/opt/bnu-register` 仍是旧版。**这是运维同步问题，不是代码缺陷。**
+- 处置：hi 授权后先做代码 + 数据库备份（`/root/bnu-register-backups/20261119T104436Z/`：`code.tar.gz` + `school.sql.gz`），再执行 `deploy_incremental.py`，`DEPLOY_EXIT=0`。
+- 核验：服务 `active`、监听 `127.0.0.1:8081`；`/login`、`/register`、`/captcha.png`、`/static/game.js`、`/static/socket.io/socket.io.min.js` 均 200，`/games` 302（未登录跳转，符合预期）；`journalctl` 错误日志无；部署代码标记齐全。
+- **`.env` mtime 前后一致**，未重新生成 `SECRET_KEY`，已存 BYOK Key 未受影响。
 
-**2.2 增量部署脚本曾遗漏数据库迁移（已修，但需部署验证）**
+**2.2 增量部署脚本曾遗漏数据库迁移（已修且已在服务器验证）**
 - 原问题：`deploy_incremental.py` 只传代码不执行 `schema_message_v2.sql`。新 `db.py` 的 SELECT 含 `quote_id/deleted_by_a/deleted_by_b/forward_from`，老表无这些列 → 同步后消息页 500。全量 `deploy.py` 会重置 `SECRET_KEY`（BYOK Key 永久报废），不能用于救场。
-- 已修并提交：消息表 4 列迁移纳入增量脚本；本轮又新增 `schema_game_ai.sql`（`game_invite` 表、`game_record` 的 AI 标识与可空 `conv_id`），上传代码前会校验表、列与可空性，缺失即中止。
-- 待验证：这些迁移**尚未在服务器跑过**，需随 2.1 一起先备份再验证。
+- 修复：消息表 4 列迁移纳入增量脚本；新增 `schema_game_ai.sql`（`game_invite` 表、`game_record` 的 AI 标识与可空 `conv_id`），上传代码前校验表、列与可空性，缺失即中止。
+- 已在服务器实跑并校验：`game_invite` / `ai_difficulty` / `conv_id nullable` = `1,1,1`，`game_invite` 授权 = `1`。
+- 首次尝试因 `mysql -p` 的 warning 混入校验结果，在**上传代码之前**按设计中止，未污染服务器；改为 `MYSQL_PWD` 环境变量 + 只取结果末行后重跑成功。凭据仅在进程环境变量中，未落盘、未入库。
 
 ### P1 — 产品决策阻塞
 
@@ -51,7 +52,7 @@
 | 问题 | 证据 | 建议 |
 |---|---|---|
 | 无自动备份 | 已有 `register/deploy/backup_mysql.sh`，但无调度 | 上线前建定时 mysqldump + 异地存储 + 恢复演练 |
-| CI 尚未实跑 | 已新增 `.github/workflows/ci.yml` | 首次推送后在 GitHub Actions 验证 `pytest` + `node --check` + `py_compile` + 自检 |
+| CI 审计告警 | run `44507640518` 总体 Success；审计 job 非阻断失败 | 跟进 `pip-audit` 报告与 Node.js 20 action 弃用警告，不阻断主回归 |
 | 生产同步 worker，WebSocket 退化长轮询 | `deploy.py` gthread worker | 待拍板后切 `GeventWebSocketWorker` + nginx Upgrade |
 | 服务器 SSH 密钥未轮换 | 总纲标"待 hi 拍板" | 安排轮换并更新部署脚本 |
 | DNS 重绑定仅部分缓解 | `_base_url_safe()` 校验时解析一次，`requests.post` 重新解析 | 公网化前 pin IP（自定义 adapter + Host 头 + server_hostname）|
@@ -106,10 +107,10 @@ node --check register/static/im.js
 node --check register/static/game.js
 python webapp/tests/selftest.py
 bash -n register/deploy/backup_mysql.sh
-git status --short                 # 本轮改动尚未提交，应能看到改动清单
+git status --short                 # 提交后应为空
 ```
 
-部署（需 `MYSQL_PW` 与服务器备份确认）：
+部署（需 `MYSQL_PW` 与服务器备份确认；本轮已实跑验证，日常更新沿用此链路）：
 
 ```bash
 MYSQL_PW=xxx python register/deploy/deploy_incremental.py
