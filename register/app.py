@@ -1336,6 +1336,53 @@ AVATAR_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "var", "av
 os.makedirs(AVATAR_DIR, exist_ok=True)
 AVATAR_MAX = 8 * 1024 * 1024        # 8MB，与前端校验一致
 AVATAR_ALLOW = {"image/jpeg", "image/jpg", "image/png", "image/webp"}
+AVATAR_MAX_PIXELS = 40_000_000     # 交给 Pillow 解码之前的像素上限
+
+
+def _avatar_real_format(data):
+    """只按文件头识别真实格式，不让 Pillow 按内容自动挑选解析插件。
+
+    返回 'JPEG' / 'PNG' / 'WEBP' / None。伪造扩展名或 mimetype 都绕不过这里；
+    PSD / TIFF / BMP / GIF / PDF 等载荷在进入原生解析器之前就会被挡掉。
+    """
+    if data.startswith(b"\xff\xd8\xff"):
+        return "JPEG"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "PNG"
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "WEBP"
+    return None
+
+
+def _open_avatar_image(data):
+    """头像图片的统一入口：先白名单、再限像素、最后才解码。
+
+    返回 (Image | None, error | None)；error 非空时调用方直接拒绝请求。
+    """
+    from PIL import Image
+
+    fmt = _avatar_real_format(data)
+    if fmt is None:
+        return None, "只支持 JPG / PNG / WebP 格式"
+
+    try:
+        im = Image.open(io.BytesIO(data))
+        # 二次确认：Pillow 实际选中的插件必须与文件头一致
+        if im.format != fmt:
+            return None, "图片格式与内容不一致"
+        # 像素上限必须在 load() 之前判断，否则解压炸弹已经占满内存
+        w, h = im.size
+        if w <= 0 or h <= 0 or w * h > AVATAR_MAX_PIXELS:
+            return None, "图片像素过大，请压缩后重试"
+        im.load()
+    except Image.DecompressionBombError:
+        return None, "图片像素过大，请压缩后重试"
+    except Exception:
+        return None, "图片无法解析，请换一张"
+
+    if im.width < 80 or im.height < 80:
+        return None, "图片太小，宽和高都至少 80 像素"
+    return im, None
 
 
 @app.post("/me/avatar")
@@ -1357,18 +1404,12 @@ def upload_avatar():
     if len(data) > AVATAR_MAX:
         return redirect(url_for("profile", e="图片不能超过 8MB"))
 
-    from PIL import Image, ImageOps
+    from PIL import ImageOps
 
-    try:
-        im = Image.open(io.BytesIO(data))
-        im.load()
-    except Exception:
-        return redirect(url_for("profile", e="图片无法解析，请换一张"))
-
-    if im.width < 80 or im.height < 80:
-        return redirect(url_for("profile", e="图片太小，宽和高都至少 80 像素"))
-    if im.width * im.height > 40_000_000:
-        return redirect(url_for("profile", e="图片像素过大，请压缩后重试"))
+    # 统一走魔数白名单 + 解码前像素上限，避免伪造 mimetype 把恶意载荷送进解析器
+    im, err = _open_avatar_image(data)
+    if err:
+        return redirect(url_for("profile", e=err))
 
     # 居中裁成正方形，避免把人像拉变形
     im = ImageOps.fit(im.convert("RGB"), (320, 320), Image.LANCZOS, centering=(0.5, 0.38))
@@ -1393,7 +1434,7 @@ def upload_avatar():
 @login_required
 def upload_cropped_avatar():
     """接收浏览器端 Cropper.js 裁好的 320×320 图，服务端只做校验与落盘。"""
-    from PIL import Image, ImageOps
+    from PIL import ImageOps
 
     if not _check_csrf(request.form.get("csrf", "")):
         return jsonify(error="CSRF 校验失败"), 403
@@ -1408,17 +1449,10 @@ def upload_cropped_avatar():
     if len(data) > AVATAR_MAX:
         return jsonify(error="图片不能超过 8MB"), 400
 
-    try:
-        im = Image.open(io.BytesIO(data))
-        im.load()
-    except Exception:
-        return jsonify(error="图片无法解析"), 400
-
-    # 服务端兜底尺寸：前端校验可被绕过（与上传路由保持一致）
-    if im.width < 80 or im.height < 80:
-        return jsonify(error="图片太小，宽和高都至少 80 像素"), 400
-    if im.width * im.height > 40_000_000:
-        return jsonify(error="图片像素过大，请压缩后重试"), 400
+    # 统一走魔数白名单 + 解码前像素上限，避免伪造请求把恶意载荷送进解析器
+    im, err = _open_avatar_image(data)
+    if err:
+        return jsonify(error=err), 400
 
     # 前端裁过，这里兜底再 fit 一次，防止伪造请求塞非正方形图
     im = ImageOps.fit(im.convert("RGB"), (320, 320), Image.LANCZOS)
