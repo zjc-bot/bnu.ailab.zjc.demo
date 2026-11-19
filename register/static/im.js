@@ -21,6 +21,7 @@
   var activePeer = null;
   var myId = 0;
   var lastMsgId = 0;
+  var seenIds = new Set();     // 消息去重：轮询与发送并发时避免重复追加
   var sending = false;
   var aiMode = false;          /* 当前是否在跟 AI 对话 */
   var aiBusy = false;
@@ -335,6 +336,10 @@
   var lastSender = null;
 
   function appendMsg(m, me, animate) {
+    if (m.id) {
+      if (seenIds.has(m.id)) return;
+      seenIds.add(m.id);
+    }
     var dstr = dateLabel(m.created_at);
     if (dstr !== lastDate) {
       var div = document.createElement('div');
@@ -360,7 +365,10 @@
       img.alt = '';
       av.appendChild(img);
     } else {
-      av.textContent = mine ? '我' : avatar(activePeer && activePeer.nickname);
+      // avatar() 返回 HTML 串，不能赋给 textContent（会字面显示标签）。
+      // 无头像时只显示昵称首字即可。
+      var name = mine ? '我' : (activePeer && activePeer.nickname) || '?';
+      av.textContent = String(name).charAt(0);
     }
 
     var wrap = document.createElement('div');
@@ -391,6 +399,7 @@
   function renderFresh(msgs, me) {
     lastDate = '';
     lastSender = null;
+    seenIds = new Set();         // 切换会话后重置去重集合
     bodyEl.replaceChildren();
     msgs.forEach(function (m) { appendMsg(m, me, false); });
     scrollBottom();
@@ -429,13 +438,18 @@
   /* ---------- 轮询 ---------- */
   function poll() {
     if (!activeConv) return;
-    api('GET', '/api/messages?conv=' + activeConv + '&after=' + lastMsgId)
+    var pollConv = activeConv;       // 固定发起时的会话，回调里校验未切换
+    var pollAfter = lastMsgId;
+    api('GET', '/api/messages?conv=' + pollConv + '&after=' + pollAfter)
       .then(function (d) {
+        if (activeConv !== pollConv) return;   // 用户已切走，丢弃旧会话的在途响应
         var msgs = d.messages || [];
         if (msgs.length) {
           myId = d.me || myId;
           msgs.forEach(function (m) { appendMsg(m, myId, true); });
-          lastMsgId = msgs[msgs.length - 1].id;
+          if (msgs[msgs.length - 1].id > lastMsgId) {
+            lastMsgId = msgs[msgs.length - 1].id;
+          }
           scrollBottom();
           loadConvs();
         }
@@ -457,15 +471,18 @@
     if (aiMode) { sendAI(text); return; }
     if (!activeConv) { toast('请先选择一个会话'); sending = false; sendBtn.disabled = false; return; }
 
-    api('POST', '/api/messages', { conv: activeConv, content: text })
+    var sendConv = activeConv;
+    api('POST', '/api/messages', { conv: sendConv, content: text })
       .then(function (d) {
+        if (activeConv !== sendConv) return;   // 已切走则不再操作当前视图
         appendMsg({
+          id: d.id,                  // 带 id，配合 seenIds 防止在途 poll 重复追加
           sender_id: myId,
           content: text,
           created_at: d.at,
           read_at: null
         }, myId, true);
-        lastMsgId = d.id;
+        if (d.id > lastMsgId) lastMsgId = d.id;
         scrollBottom();
         loadConvs();
       })

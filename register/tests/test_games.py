@@ -139,3 +139,22 @@ def test_draw_when_board_full():
     # 最后一手落 (0,0)，player=1；此时 (0,0)=1 与 (0,1)=2 不同色，无五连
     out = gomoku.apply_move(state, {"x": 0, "y": 0}, 1)
     assert out["winner"] == 0
+
+
+def test_draw_maps_to_none_winner_in_manager():
+    """规则层 winner=0 必须在 manager 层转成 {winner:None, reason:'draw'}。"""
+    from games.rules import gomoku
+    manager.create_room(9, "gomoku", 10, 20)
+    room = manager.get_room(9)
+    # 构造差一手落满且无五连的棋盘
+    state = {"board": [[0] * 15 for _ in range(15)], "winner": None}
+    for y in range(15):
+        for x in range(15):
+            if x == 0 and y == 0:
+                continue
+            state["board"][y][x] = 1 if ((x // 2) + (y // 3)) % 2 == 0 else 2
+    room["state"] = state
+    room["turn"] = 0    # 轮到 P1
+    snap = manager.apply_move(9, 10, {"x": 0, "y": 0})
+    assert snap["status"] == "finished"
+    assert snap["result"] == {"winner": None, "reason": "draw"}

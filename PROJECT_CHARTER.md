@@ -393,7 +393,11 @@ D:/MySQL/
 | 好友申请唯一约束缺失 | 低 | **已处置** | schema 加 `uk_pair`；`ON DUPLICATE KEY` 支持拒绝后重发；`schema_chat_migrate.sql` 清历史重复 |
 | 删用户不删 game_record / 战绩内连接 | 低 | **已处置** | 删用户连带清 game_record；战绩改 LEFT JOIN 显示已注销 |
 | 非 dict 载荷抛异常 | 低 | **已处置** | join/move/resign 均加 isinstance 与 int 转换校验 |
-| register nginx 反代与 x_for=0 矛盾 | 中 | **待确认拓扑** | 走隧道则维持 x_for=0；若实际经 nginx 反代，需连同 admin 白名单重新设计 |
+| ~~register nginx 反代与 x_for=0 矛盾~~ | 高 | **已处置（hi 选方案 1）** | 改 `x_for=1` + nginx 三处 XFF 改 `$remote_addr` 覆盖；**约束：gunicorn 只绑回环、nginx 唯一入口、仅一层代理** |
+| BYOK DNS 重绑定 | 中 | **部分缓解** | 保存与请求前各校验一次公网 IP；彻底修需 pin IP（自定义 adapter / Host 头 + server_hostname），公网化前必做 |
+| 裁剪头像缺像素上限 | 中 | **已处置** | 补 40M 像素上限，防高压缩比图片解压炸弹 |
+| 重置令牌非原子 | 中 | **已处置** | `claim_reset()` 单条条件 UPDATE 原子占用，并发只有一个成功 |
+| webapp POST/PUT 缺 Content-Type | 高 | **已处置** | `api()` 合并而非覆盖 headers，增删改学生可用 |
 
 ---
 
@@ -424,6 +428,7 @@ D:/MySQL/
 | 2026-11-18 | 规则引擎改为服务端自研 Python，弃用前端 JS 引擎 | 服务端权威校验要求规则在服务端执行；narabe/chess.js 等纯前端引擎无法防伪造棋盘。自研 `gomoku.py` 无 License 风险 |
 | 2026-11-18 | Phase 3 五子棋本地全链路完成 | 权威规则 + 邀请/落子/终局/归档 + `/games` 页面；15 项测试全过（含 Socket.IO 集成）。浏览器真人实测与生产切换仍待做 |
 | 2026-11-19 | 代码审查修复（15 属实 / 2 纠正） | 高危：终局房间未销毁、base_url SSRF；中危：认输覆盖、会话失效、AI 失败扣费、未读误标、UA 未转义、和棋缺失、用户状态校验；低危：头像文案、好友唯一约束、战绩一致性。学生限流伪造 IP **不成立**（nginx 追加 XFF + x_for=1 取真实 IP）；"删用户在 db.py"**定位纠正**（在 admin.py）。23 项测试全过 |
+| 2026-11-19 | 修复后复审（4 路子代理） | 发现 11 项，含 3 项本次修复引入/未修好：`p.port` ValueError→500、mark_read 二次打开仍误标、DNS 重绑定；另有 admin 白名单在 nginx 反代下**完全失效**（比原审查更严重）、webapp POST 缺 Content-Type 必失败、重置令牌 TOCTOU。hi 选方案 1 修 admin（x_for=1 + nginx 覆盖 XFF），已说明"隔离破则白名单破"的危害。测试补到 32 项 |
 
 ---
 

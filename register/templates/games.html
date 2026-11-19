@@ -7,7 +7,7 @@
 <meta name="uid" content="{{ user.id }}">
 <meta name="uname" content="{{ user.nickname or user.real_name }}">
 <title>对战 · BNU AI Lab</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=8">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=9">
 <style>
 .gm-layout { display: grid; grid-template-columns: 260px 1fr; gap: 20px; align-items: start; }
 .gm-side { padding: 16px; }
@@ -123,6 +123,6 @@
 </main>
 
 <script src="{{ url_for('static', filename='socket.io/socket.io.min.js') }}"></script>
-<script src="{{ url_for('static', filename='game.js') }}?v=1"></script>
+<script src="{{ url_for('static', filename='game.js') }}?v=2"></script>
 </body>
 </html>

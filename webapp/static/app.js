@@ -19,8 +19,10 @@ const rowsEl = $('rows');
 async function api(url, opts = {}) {
   const res = await fetch(url, {
     credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
     ...opts,
+    // headers 必须合并：opts.headers 若只带 X-CSRF-Token，整体覆盖会丢掉
+    // Content-Type，导致 Flask get_json() 返回 None、增删改必失败。
+    headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
   });
   if (res.status === 401) {
     location.href = '/login';

@@ -64,3 +64,56 @@ def test_mailer_escapes_user_agent(monkeypatch):
     mailer.send_login_alert("a@b.com", "昵称", "203.0.113.1", evil, "现在")
     assert "<a href" not in captured["html"]
     assert "&lt;a href" in captured["html"]
+
+
+def test_ssrf_rejects_domain_resolving_to_private(monkeypatch):
+    """核心分支：域名解析到私网 IP 必须拒绝（原测试零覆盖）。"""
+    import socket
+
+    def fake(*a, **kw):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.5", 443))]
+
+    monkeypatch.setattr(app_module.socket, "getaddrinfo", fake)
+    ok, why = base_url_safe("https://evil.example.com/v1")
+    assert ok is False and "内网" in why
+
+
+def test_ssrf_rejects_any_private_ip_among_many(monkeypatch):
+    """多 IP 时任一为私网即拒绝（不能只看第一个）。"""
+    import socket
+
+    def fake(*a, **kw):
+        return [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("1.1.1.1", 443)),
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("169.254.169.254", 443)),
+        ]
+
+    monkeypatch.setattr(app_module.socket, "getaddrinfo", fake)
+    ok, _ = base_url_safe("https://multi.example.com/v1")
+    assert ok is False
+
+
+def test_ssrf_hostname_blacklist_independent_of_dns(monkeypatch):
+    """即使 DNS 返回公网 IP，localhost/.local 也必须被主机名黑名单拒绝。"""
+    import socket
+
+    monkeypatch.setattr(
+        app_module.socket, "getaddrinfo",
+        lambda *a, **kw: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("1.1.1.1", 443))],
+    )
+    for url in ("https://localhost/v1", "https://foo.local/v1"):
+        ok, _ = base_url_safe(url)
+        assert ok is False, url
+
+
+def test_ssrf_rejects_malformed_port():
+    """畸形端口不能抛 ValueError / 500，而是友好拒绝。"""
+    for url in ("https://api.example.com:abc/v1", "https://api.example.com:99999/v1"):
+        ok, why = base_url_safe(url)
+        assert ok is False and why, url
+
+
+def test_ssrf_metadata_https():
+    """云元数据地址即使走 https 也要拒绝（原 http 用例是假阳性）。"""
+    ok, _ = base_url_safe("https://169.254.169.254/latest/meta-data")
+    assert ok is False

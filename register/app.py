@@ -42,11 +42,13 @@ from games import init_games, socketio
 
 app = Flask(__name__)
 app.json.ensure_ascii = False
-# 本服务经 SSH 隧道直连（gunicorn bind 127.0.0.1:8081），前方没有 nginx 反代。
-# 因此不信任 X-Forwarded-For（x_for=0）：否则客户端可伪造 XFF: 127.0.0.1
-# 覆盖 remote_addr，绕过下方 /admin 的本机白名单。
-# 若将来改为 nginx 反代，须让 nginx 强制重写 XFF 并重新评估此处信任链。
-app.wsgi_app = ProxyFix(app.wsgi_app, x_for=0, x_proto=1, x_host=1)
+# 信任链前提（三条必须同时成立，否则 IP 判定失效）：
+#   1. gunicorn 只 bind 127.0.0.1:8081，公网无法直连
+#   2. nginx 是唯一公网入口，且 XFF 用 $remote_addr 覆盖（非 $proxy_add_x_forwarded_for）
+#   3. nginx 与 gunicorn 之间只有一层代理
+# 满足时 x_for=1 取到真实客户端 IP，admin 白名单与登录限流才有意义。
+# 若将来在 nginx 前加 CDN/SLB，必须同步调大 x_for，否则取到代理 IP。
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 app.register_blueprint(admin.bp)
 
 # SECRET_KEY 必须由环境注入，缺失即拒绝启动。
@@ -182,8 +184,9 @@ def _403(_e):
 
 
 # 管理后台只允许本机访问：
-#   SSH 隧道直连 8081 → 真实 TCP 对端 = 127.0.0.1，放行
-#   XFF 不再参与判定（见上方 ProxyFix 注释），伪造头无效
+#   SSH 隧道直连 8081 → remote_addr = 127.0.0.1，放行
+#   nginx 反代 → ProxyFix 取到真实公网 IP，拒绝
+# 注意：x_for=1 下，能直连 8081 者可伪造 XFF 绕过；靠网络隔离兜底。
 ADMIN_ALLOWED = {"127.0.0.1", "::1", "localhost"}
 
 
@@ -610,9 +613,14 @@ def reset_submit():
     if pw != pw2:
         return fail("两次输入的密码不一致")
 
-    db.update_password(row["user_id"], generate_password_hash(pw))
-    db.consume_reset(row["id"])
-    app.logger.info("用户通过邮件链接重置密码 uid=%s", row["user_id"])
+    # 格式全部通过后，原子占用令牌：并发请求只有一个能成功。
+    claimed = db.claim_reset(token)
+    if not claimed:
+        return render_template("error.html", code=400,
+                               msg="重置链接已被使用或已过期"), 400
+    uid, _email = claimed
+    db.update_password(uid, generate_password_hash(pw))
+    app.logger.info("用户通过邮件链接重置密码 uid=%s", uid)
     session.clear()
     return redirect(url_for("login_page", reset=1))
 
@@ -689,14 +697,21 @@ def _base_url_safe(url):
 
     # 字面 IP 直接判定
     try:
-        literal = ipaddress.ip_address(host)
+        ipaddress.ip_address(host)
         if bad_ip(host):
             return False, "不允许使用内网或保留地址"
     except ValueError:
         pass  # 域名，继续 DNS 解析
 
     try:
-        infos = socket.getaddrinfo(host, p.port or 443, proto=socket.IPPROTO_TCP)
+        port = p.port or 443   # p.port 对畸形端口（如 :abc / :99999）抛 ValueError
+    except ValueError:
+        return False, "Base URL 端口不合法"
+    if not (1 <= port <= 65535):
+        return False, "Base URL 端口不合法"
+
+    try:
+        infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
     except OSError:
         return False, "Base URL 域名无法解析"
     if not infos:
@@ -821,6 +836,13 @@ def chat():
             use_base = uk["base_url"] or AI_BASE
             user_model = uk["model"]
             byok = True
+            # 保存时的校验可能已过时（域名被改指向内网）：请求前重校验一次。
+            # 注意这不防毫秒级 DNS 重绑定；彻底修需 pin IP，列入公网化前置项。
+            if use_base != AI_BASE:
+                safe, why = _base_url_safe(use_base)
+                if not safe:
+                    app.logger.warning("BYOK base_url 运行时校验失败 uid=%s why=%s", uid, why)
+                    return jsonify(error="自带 API 地址已不安全，请重新设置"), 400
 
     try:
         limit = int(db.get_ai_config("daily_limit", "40") or 40)
@@ -1131,11 +1153,10 @@ def api_messages():
     if not c or session["uid"] not in (c["user_a"], c["user_b"]):
         return jsonify(error="会话不存在"), 404
 
-    # 先标记已读再查，否则返回的第一批消息 read_at 仍是空的
-    if not after:
-        db.mark_read(conv_id, session["uid"])
-
     rows = db.list_messages(conv_id, after)
+    # 只标记本次实际返回的消息：先查后标，避免把未展示的更早未读误标。
+    if not after and rows:
+        db.mark_read_ids(conv_id, session["uid"], [r["id"] for r in rows])
 
     # 首屏只取 50 条：告知前端还有更早消息，避免误以为已读完整会话
     has_older = bool(not after and len(rows) >= 50 and db.has_older_messages(conv_id, rows[0]["id"] if rows else 0))
@@ -1187,7 +1208,7 @@ def api_mark_read():
     if not c or session["uid"] not in (c["user_a"], c["user_b"]):
         return jsonify(error="会话不存在"), 404
 
-    return jsonify(ok=True, marked=db.mark_read(conv_id, session["uid"]))
+    return jsonify(ok=True, marked=db.mark_all_read(conv_id, session["uid"]))
 
 
 # ---------- 个人中心 ----------
@@ -1276,9 +1297,11 @@ def upload_cropped_avatar():
     except Exception:
         return jsonify(error="图片无法解析"), 400
 
-    # 服务端兜底最小尺寸：前端校验可被绕过（与上传路由保持一致）
+    # 服务端兜底尺寸：前端校验可被绕过（与上传路由保持一致）
     if im.width < 80 or im.height < 80:
         return jsonify(error="图片太小，宽和高都至少 80 像素"), 400
+    if im.width * im.height > 40_000_000:
+        return jsonify(error="图片像素过大，请压缩后重试"), 400
 
     # 前端裁过，这里兜底再 fit 一次，防止伪造请求塞非正方形图
     im = ImageOps.fit(im.convert("RGB"), (320, 320), Image.LANCZOS)
@@ -1340,6 +1363,10 @@ def profile():
 
 def _probe_api_key(api_key, base_url):
     """用一次极小的请求验证 key 是否可用。"""
+    if base_url:
+        safe, why = _base_url_safe(base_url)
+        if not safe:
+            return False, why
     try:
         r = requests.post(
             (base_url or AI_BASE) + "/chat/completions",

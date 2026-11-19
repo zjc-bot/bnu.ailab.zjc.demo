@@ -306,6 +306,34 @@ def consume_reset(reset_id):
             conn.commit()
 
 
+def claim_reset(token):
+    """原子占用重置令牌：仅当未使用且未过期时置 used=1。
+
+    返回 (user_id, email) 或 None。单条 UPDATE 的 rowcount 保证并发下只有一个请求成功，
+    杜绝「校验→改密→消费」分离造成的 TOCTOU。
+    """
+    with connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT r.id, r.user_id, u.email FROM password_reset r "
+                "JOIN app_user u ON u.id=r.user_id WHERE r.token=%s",
+                (token,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            cur.execute(
+                "UPDATE password_reset SET used=1 WHERE id=%s AND used=0 "
+                "AND expires_at > NOW()",
+                (row["id"],),
+            )
+            claimed = cur.rowcount == 1
+            conn.commit()
+            if not claimed:
+                return None
+            return row["user_id"], row["email"]
+
+
 # ---------- 登录历史 ----------
 
 def last_login_ip(user_id):
@@ -759,22 +787,35 @@ def list_messages(conv_id, after_id=0, limit=50):
             return cur.fetchall()
 
 
-def mark_read(conv_id, reader_id, limit=50):
-    """只标记最近 limit 条未读。
+def mark_read_ids(conv_id, reader_id, ids):
+    """只标记「实际展示给用户」的那批消息。
 
-    会话超过 limit 条时，更早的未读保留：它们没有展示给用户，不能被误标已读。
+    调用方传 list_messages 返回的 id 集合。这样更早未展示的未读不会被误标，
+    重复打开会话也不会把上一批之外的消息标掉。
     """
+    if not ids:
+        return 0
+    placeholders = ",".join(["%s"] * len(ids))
     with connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 "UPDATE message SET read_at=NOW() "
-                "WHERE conv_id=%s AND sender_id<>%s AND read_at IS NULL "
-                "AND id IN ("
-                "  SELECT id FROM (SELECT id FROM message "
-                "  WHERE conv_id=%s AND sender_id<>%s AND read_at IS NULL "
-                "  ORDER BY id DESC LIMIT %s) t"
-                ")",
-                (conv_id, reader_id, conv_id, reader_id, limit),
+                f"WHERE conv_id=%s AND sender_id<>%s AND read_at IS NULL "
+                f"AND id IN ({placeholders})",
+                (conv_id, reader_id, *ids),
+            )
+            conn.commit()
+            return cur.rowcount
+
+
+def mark_all_read(conv_id, reader_id):
+    """显式「全部标已读」（前端 /api/messages/read 调用）。"""
+    with connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE message SET read_at=NOW() "
+                "WHERE conv_id=%s AND sender_id<>%s AND read_at IS NULL",
+                (conv_id, reader_id),
             )
             conn.commit()
             return cur.rowcount
