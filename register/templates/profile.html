@@ -2,12 +2,12 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}?v=1">
 <meta name="csrf" content="{{ csrf }}">
 <title>账号设置 · BNU AI Lab</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=9">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=11">
 </head>
-<body>
+<body><a class="skip-link" href="#main">跳到主要内容</a>
 
 <header class="topbar">
   <div class="topbar-left">
@@ -18,10 +18,10 @@
     </div>
   </div>
   <div class="topbar-right">
-    <nav class="admin-nav">
+    <nav class="admin-nav" aria-label="主导航">
       <a href="{{ url_for('home') }}">消息</a>
       <a href="{{ url_for('games_page') }}">对战</a>
-      <a href="{{ url_for('profile') }}" class="on">账号</a>
+      <a href="{{ url_for('profile') }}" class="on" aria-current="page">账号</a>
     </nav>
     <form method="post" action="{{ url_for('logout') }}">
       <input type="hidden" name="csrf" value="{{ csrf }}">
@@ -30,7 +30,7 @@
   </div>
 </header>
 
-<main class="wrap-mid">
+<main class="wrap-mid" id="main">
 
   <div class="page-head">
     <h1>账号设置</h1>
@@ -124,9 +124,7 @@
     <form method="post" action="{{ url_for('change_nickname') }}" autocomplete="off">
       <input type="hidden" name="csrf" value="{{ csrf }}">
       <div class="inline-row">
-        <input name="nickname" required maxlength="20" value="{{ user.nickname }}"
-               style="padding:10px 12px;border:1px solid var(--line);border-radius:8px;
-                      font-size:14px;font-family:inherit;">
+        <input name="nickname" required maxlength="20" value="{{ user.nickname }}">
         <button class="btn primary" type="submit">保存</button>
       </div>
       <p class="hint">2–20 位，可用中英文、数字、下划线、点、短横线。</p>
@@ -223,10 +221,10 @@
       <summary>消息 · 与好友聊天</summary>
       <div class="guide-body">
         <ol>
-          <li>点左下角「＋」或「选择图片」旁的加好友按钮，输入对方<b>学号</b>查找。</li>
+          <li>点消息页顶部的「＋」（或空白页的「添加好友」），输入对方<b>学号</b>查找。</li>
           <li>发送好友申请，填写验证消息（可选）。</li>
-          <li>对方在「好友」标签页看到申请，点「同意」后双方自动建立会话。</li>
-          <li>在「会话」标签页点开好友，输入消息按 <kbd>Enter</kbd> 发送，<kbd>Shift+Enter</kbd> 换行。</li>
+          <li>对方会在联系人列表里看到申请卡片，点「同意」后自动建立会话。</li>
+          <li>在联系人列表点开好友，输入消息按 <kbd>Enter</kbd> 发送，<kbd>Shift+Enter</kbd> 换行。</li>
           <li>新消息每 2 秒自动刷新，不用手动刷新页面。</li>
         </ol>
       </div>
@@ -236,7 +234,7 @@
       <summary>小鲸 AI · 对话</summary>
       <div class="guide-body">
         <ol>
-          <li>会话列表最顶部的「小鲸 AI」是导览员，点开即可对话。</li>
+          <li>联系人列表最顶部的「小鲸 AI」是导览员，点开即可对话。</li>
           <li>回复逐字显示；刷新页面后历史对话会自动恢复。</li>
           <li>默认使用实验室提供的额度（每天 40 次）。</li>
           <li>想用自己的接口：在下方「AI 接口」填 API Key。填入后会先验证有效性，通过即生效，且不再占用实验室额度。</li>
@@ -250,7 +248,8 @@
         <ol>
           <li>点顶部导航「对战」进入。</li>
           <li>必须是<b>好友</b>才能对战。在左侧好友列表点「邀请」。</li>
-          <li>邀请只推给<b>同样停留在对战页</b>的好友，请让对方也打开此页。</li>
+          <li>邀请会保存 1 小时；好友上线后在「对战」页的待处理邀请里接受或拒绝，不必同时在线。</li>
+          <li>也可以点「和小鲸练习」选难度，与服务端 AI 直接开一局。</li>
           <li>双方进入同一房间后轮流落子，先连成五子者胜。</li>
           <li>棋盘由服务端校验，不能作弊；对局结束自动记入「最近战绩」。</li>
         </ol>
@@ -290,6 +289,6 @@
 
 <link rel="stylesheet" href="{{ url_for('static', filename='vendor/cropper.min.css') }}?v=1">
 <script src="{{ url_for('static', filename='vendor/cropper.min.js') }}?v=1"></script>
-<script src="{{ url_for('static', filename='avatar-crop.js') }}?v=2"></script>
+<script src="{{ url_for('static', filename='avatar-crop.js') }}?v=3"></script>
 </body>
 </html>

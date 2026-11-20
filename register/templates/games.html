@@ -2,64 +2,15 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}?v=1">
 <meta name="csrf" content="{{ csrf }}">
 <meta name="uid" content="{{ user.id }}">
 <meta name="uname" content="{{ user.nickname or user.real_name }}">
 <title>对战 · BNU AI Lab</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=9">
-<style>
-.gm-layout { display: grid; grid-template-columns: 260px 1fr; gap: 20px; align-items: start; }
-.gm-side { padding: 16px; }
-.gm-side h3 { font-size: 14px; margin-bottom: 12px; }
-.gm-friend { display: flex; align-items: center; gap: 10px; padding: 9px 6px; border-bottom: 1px solid var(--line); }
-.gm-friend:last-child { border-bottom: 0; }
-.gm-friend-info { flex: 1; min-width: 0; }
-.gm-friend-name { font-size: 13px; font-weight: 500; }
-.gm-friend-no { font-size: 11px; color: var(--faint); font-family: ui-monospace, monospace; }
-.gm-ai-box, .gm-invites { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
-.gm-ai-row { display: flex; gap: 8px; align-items: center; }
-.gm-ai-row select, .gm-ai-row button { min-height: 32px; }
-.gm-ai-row select { flex: 1; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
-.gm-invite { padding: 9px 0; border-bottom: 1px solid var(--line); }
-.gm-invite:last-child { border-bottom: 0; }
-.gm-invite-text { font-size: 12px; color: var(--muted); line-height: 1.6; }
-.gm-invite-btns { display: flex; gap: 8px; margin-top: 7px; }
-.gm-guide { margin: 6px; padding: 10px 12px; border: 1px solid #dbeafe; border-radius: 9px;
-  background: #f0f7ff; color: #374151; font-size: 12px; line-height: 1.6; }
-.gm-guide[hidden] { display: none; }
-.gm-guide-head { display: flex; gap: 10px; align-items: center; }
-.gm-guide-text { flex: 1; }
-.gm-guide button { border: 0; background: transparent; color: var(--primary); cursor: pointer;
-  font-family: inherit; font-size: 12px; white-space: nowrap; }
-.gm-guide button:hover { text-decoration: underline; }
-.gm-board-wrap { display: flex; flex-direction: column; align-items: center; gap: 14px; }
-.gm-status { font-size: 14px; color: var(--muted); min-height: 22px; text-align: center; }
-.gm-status-error { color: #b91c1c; }
-.gm-board { display: grid; grid-template-columns: repeat(15, 34px); grid-template-rows: repeat(15, 34px);
-  background: #dcb35c; border: 1px solid #8a6a2f; border-radius: 3px;
-  box-shadow: var(--shadow); }
-.gm-cell { width: 34px; height: 34px; position: relative; cursor: pointer; }
-/* 线画在格子的上边与左边：相邻格共享边界，自然连成封闭网格；
-   最右列与最下行由 gm-board 的 border 补上。 */
-.gm-cell::before, .gm-cell::after { content: ''; position: absolute; background: #8a6a2f; opacity: .45; }
-.gm-cell::before { left: 0; right: 0; top: 0; height: 1px; }
-.gm-cell::after  { top: 0; bottom: 0; left: 0; width: 1px; }
-.gm-stone { position: absolute; width: 28px; height: 28px; border-radius: 50%; left: 3px; top: 3px; z-index: 2;
-  box-shadow: 0 1px 2px rgba(0,0,0,.35); }
-.gm-stone.p1 { background: #1f2937; }
-.gm-stone.p2 { background: #f9fafb; border: 1px solid #9ca3af; }
-.gm-cell:hover::after { background: #8a6a2f; opacity: .9; }
-.gm-rec { margin-top: 20px; padding: 16px; }
-.gm-rec table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.gm-rec th, .gm-rec td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
-.gm-rec th { color: var(--muted); font-weight: 500; font-size: 12px; }
-.gm-actions { display: flex; gap: 10px; }
-.gm-empty { color: var(--faint); font-size: 13px; padding: 8px 0; }
-@media (max-width: 720px) { .gm-layout { grid-template-columns: 1fr; } }
-</style>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=11">
+<!-- gm styles moved to static/style.css -->
 </head>
-<body>
+<body><a class="skip-link" href="#main">跳到主要内容</a>
 
 <header class="topbar">
   <div class="topbar-left">
@@ -67,9 +18,9 @@
     <div><h1>BNU AI Lab</h1><p class="sub">对战</p></div>
   </div>
   <div class="topbar-right">
-    <nav class="admin-nav">
+    <nav class="admin-nav" aria-label="主导航">
       <a href="{{ url_for('home') }}">消息</a>
-      <a href="{{ url_for('games_page') }}" class="on">对战</a>
+      <a href="{{ url_for('games_page') }}" class="on" aria-current="page">对战</a>
       <a href="{{ url_for('profile') }}">账号</a>
     </nav>
     <form method="post" action="{{ url_for('logout') }}">
@@ -79,7 +30,7 @@
   </div>
 </header>
 
-<main class="wrap-wide">
+<main class="wrap-wide" id="main">
   <div class="page-head">
     <h1>五子棋对战</h1>
     <p>与好友对局，或找小鲸练手；率先连成五子者获胜。落子由服务端校验，不可作弊。</p>
@@ -109,7 +60,7 @@
         <p class="gm-empty">还没有好友，先去「消息」添加好友。</p>
         {% endfor %}
       </div>
-      <p class="gm-empty" style="margin-top:12px">邀请会保存 1 小时；好友上线后可在待处理邀请里接受或拒绝。</p>
+      <p class="gm-empty gm-note">邀请会保存 1 小时；好友上线后可在待处理邀请里接受或拒绝。</p>
 
       <div class="gm-ai-box">
         <h3>和小鲸练习</h3>
@@ -149,7 +100,7 @@
   </div>
 
   <section class="card gm-rec">
-    <h3 style="font-size:14px; margin-bottom:12px">最近战绩</h3>
+    <h3>最近战绩</h3>
     <table>
       <thead><tr><th>时间</th><th>对手</th><th>执子</th><th>结果</th><th>步数</th></tr></thead>
       <tbody id="gmRecords">
@@ -170,6 +121,6 @@
 </main>
 
 <script src="{{ url_for('static', filename='socket.io/socket.io.min.js') }}"></script>
-<script src="{{ url_for('static', filename='game.js') }}?v=3"></script>
+<script src="{{ url_for('static', filename='game.js') }}?v=5"></script>
 </body>
 </html>

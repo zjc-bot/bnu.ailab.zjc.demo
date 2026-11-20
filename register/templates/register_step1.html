@@ -2,11 +2,11 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}?v=1">
 <title>身份核验 · BNU AI Lab</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=9">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=11">
 </head>
-<body>
+<body><a class="skip-link" href="#main">跳到主要内容</a>
 
 <header class="topbar">
   <div class="topbar-left">
@@ -17,11 +17,11 @@
     </div>
   </div>
   <div class="topbar-right">
-    <a href="{{ url_for('login_page') }}" class="btn ghost" style="padding:7px 14px;font-size:13px;">登录</a>
+    <a href="{{ url_for('login_page') }}" class="btn ghost sm2">登录</a>
   </div>
 </header>
 
-<main class="wrap-narrow">
+<main class="wrap-narrow" id="main">
 
   <ol class="steps">
     <li class="active"><span>1</span>身份核验</li>
@@ -65,7 +65,7 @@
       <button class="btn primary block" type="submit">核验身份</button>
     </form>
 
-    <p class="hint" style="text-align:center;margin-top:14px;">
+    <p class="hint hint-center">
       学号与姓名必须同时匹配名单，任一不符都无法通过。
     </p>
   </div>
@@ -73,6 +73,6 @@
   <p class="center-note">已有账号？<a href="{{ url_for('login_page') }}">直接登录</a></p>
 </main>
 
-<script src="{{ url_for('static', filename='app.js') }}?v=4"></script>
+<script src="{{ url_for('static', filename='app.js') }}?v=5"></script>
 </body>
 </html>

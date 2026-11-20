@@ -27,6 +27,7 @@ __pycache__/
 venv/
 
 # ===== 日志与临时文件 =====
+.playwright-cli/
 *.log
 *.tmp
 *.swp

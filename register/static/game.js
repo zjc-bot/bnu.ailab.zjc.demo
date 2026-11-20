@@ -73,14 +73,37 @@
 
   function buildBoard() {
     boardEl.replaceChildren();
+    boardEl.setAttribute('role', 'grid');
+    boardEl.setAttribute('aria-label', '五子棋棋盘，15 行 15 列；方向键移动，回车或空格落子');
     for (var y = 0; y < 15; y++) {
       for (var x = 0; x < 15; x++) {
         var cell = document.createElement('div');
         cell.className = 'gm-cell';
         cell.dataset.x = x;
         cell.dataset.y = y;
+        cell.setAttribute('role', 'gridcell');
+        /* roving tabindex：只有一个格子在 Tab 顺序里，其余用方向键到达，
+           避免 225 个 Tab 停靠点。默认停在中心星位。 */
+        cell.tabIndex = (x === 7 && y === 7) ? 0 : -1;
         (function (cx, cy) {
           cell.addEventListener('click', function () { place(cx, cy); });
+          cell.addEventListener('keydown', function (e) {
+            var dx = 0, dy = 0;
+            if (e.key === 'ArrowLeft') dx = -1;
+            else if (e.key === 'ArrowRight') dx = 1;
+            else if (e.key === 'ArrowUp') dy = -1;
+            else if (e.key === 'ArrowDown') dy = 1;
+            else if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+              e.preventDefault();
+              place(cx, cy);
+              return;
+            } else return;
+            e.preventDefault();
+            var nx = Math.min(14, Math.max(0, cx + dx));
+            var ny = Math.min(14, Math.max(0, cy + dy));
+            var next = boardEl.children[ny * 15 + nx];
+            if (next) { cell.tabIndex = -1; next.tabIndex = 0; next.focus(); }
+          });
         })(x, y);
         boardEl.appendChild(cell);
       }
@@ -103,6 +126,8 @@
       var cell = cells[i];
       var x = Number(cell.dataset.x), y = Number(cell.dataset.y);
       var v = (grid[y] && grid[y][x]) || 0;
+      cell.setAttribute('aria-label', (x + 1) + '列' + (y + 1) + '行 · ' +
+        (v === 1 ? '黑子' : v === 2 ? '白子' : '空位'));
       var old = cell.querySelector('.gm-stone');
       if (old) old.remove();
       if (v) {

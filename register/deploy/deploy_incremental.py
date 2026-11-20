@@ -4,7 +4,7 @@
   - 不重新生成 .env（保留现有 SECRET_KEY、SITE_URL、SMTP 配置）
   - 不重跑全量 schema，只幂等补齐游戏表、消息表与 AI 对战迁移
   - 不改 systemd worker 类型（保持同步 gthread，Socket.IO 走长轮询）
-  - 部署前已在服务器做代码 + 数据库备份
+  - 部署前自动在服务器做代码 + 数据库备份（仅存于 /root，不回传）
 """
 
 import os
@@ -50,7 +50,29 @@ def mysql(sql, t=120):
     return "\n".join(lines).strip()
 
 
-print("=== 1. 建 game_record 表（幂等）===")
+print("=== 0. 服务器备份（代码 + 数据库）===")
+stamp = run("date -u +%Y%m%dT%H%M%SZ").strip()
+backup_dir = f"/root/bnu-register-backups/{stamp}"
+backup_cmd = (
+    "set -e; umask 077; "
+    f"mkdir -p {backup_dir}; "
+    f"tar -czf {backup_dir}/code.tar.gz -C /opt bnu-register; "
+    f"MYSQL_PWD={shlex.quote(MYSQL_PW)} mysqldump -uroot "
+    "--single-transaction --quick --routines --events --triggers --hex-blob "
+    "--default-character-set=utf8mb4 --set-gtid-purged=OFF --no-tablespaces "
+    "--databases school --result-file=/tmp/_bnu_backup.sql; "
+    f"gzip -c /tmp/_bnu_backup.sql > {backup_dir}/school.sql.gz; "
+    "rm -f /tmp/_bnu_backup.sql; "
+    f"ls -lh {backup_dir}/code.tar.gz {backup_dir}/school.sql.gz"
+)
+print(" ", run(backup_cmd, 600) or "OK")
+if run(
+    f"test -s {backup_dir}/code.tar.gz && "
+    f"test -s {backup_dir}/school.sql.gz && echo OK"
+).strip() != "OK":
+    raise SystemExit("备份未生成或不完整，中止部署")
+
+print("\n=== 1. 建 game_record 表（幂等）===")
 sftp = c.open_sftp()
 sftp.put(os.path.join(LOCAL, "schema_game.sql"), "/tmp/game_schema.sql")
 sftp.close()
@@ -109,10 +131,16 @@ FILES = [
     "games/__init__.py", "games/events.py", "games/manager.py",
     "games/store.py", "games/ai/__init__.py", "games/ai/gomoku.py",
     "games/rules/__init__.py", "games/rules/gomoku.py",
-    "static/game.js", "static/socket.io/socket.io.min.js",
-    "templates/games.html",
-    "templates/home.html", "templates/profile.html",
-    "static/im.js", "static/im.css", "static/avatar-crop.js", "static/style.css",
+    "static/app.js", "static/avatar-crop.js", "static/chart.js",
+    "static/favicon.svg", "static/game.js", "static/im.css", "static/im.js",
+    "static/style.css", "static/socket.io/socket.io.min.js",
+    "templates/error.html", "templates/games.html", "templates/home.html",
+    "templates/login.html", "templates/privacy.html", "templates/profile.html",
+    "templates/register_step1.html", "templates/register_step2.html",
+    "templates/reset.html", "templates/verify.html",
+    "templates/admin/account.html", "templates/admin/dash.html",
+    "templates/admin/login.html", "templates/admin/logs.html",
+    "templates/admin/users.html",
 ]
 sftp = c.open_sftp()
 for rel in FILES:
@@ -150,8 +178,12 @@ print(" ", run("chown -R root:root /opt/bnu-register && "
 
 print("\n=== 7. 验证 ===")
 print("  监听:", run("ss -lntp | grep 8081 | awk '{print $4}'"))
-for path in ["/login", "/register", "/captcha.png", "/static/socket.io/socket.io.min.js",
-             "/static/game.js", "/games"]:
+for path in ["/login", "/register", "/captcha.png",
+             "/static/favicon.svg?v=1", "/static/style.css?v=10",
+             "/static/im.css?v=5", "/static/im.js?v=9",
+             "/static/game.js?v=4", "/static/app.js?v=5",
+             "/static/avatar-crop.js?v=3",
+             "/static/socket.io/socket.io.min.js", "/games", "/home", "/me"]:
     code = run(f"curl -s -o /dev/null -w '%{{http_code}}' http://127.0.0.1:8081{path}")
     print(f"    {path:42s} {code}")
 print("\n  错误日志:")

@@ -2,13 +2,13 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}?v=1">
 <meta name="csrf" content="{{ csrf }}">
 <title>消息 · BNU AI Lab</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=9">
-<link rel="stylesheet" href="{{ url_for('static', filename='im.css') }}?v=4">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=11">
+<link rel="stylesheet" href="{{ url_for('static', filename='im.css') }}?v=6">
 </head>
-<body class="im-page">
+<body class="im-page"><a class="skip-link" href="#main">跳到主要内容</a>
 
 <header class="topbar">
   <div class="topbar-left">
@@ -19,8 +19,8 @@
     </div>
   </div>
   <div class="topbar-right">
-    <nav class="admin-nav">
-      <a href="{{ url_for('home') }}" class="on">消息</a>
+    <nav class="admin-nav" aria-label="主导航">
+      <a href="{{ url_for('home') }}" class="on" aria-current="page">消息</a>
       <a href="{{ url_for('games_page') }}">对战</a>
       <a href="{{ url_for('profile') }}">账号</a>
     </nav>
@@ -31,7 +31,7 @@
   </div>
 </header>
 
-<main class="im">
+<main class="im" id="main">
 
   <aside class="im-side">
     <div class="im-side-top">
@@ -78,6 +78,12 @@
 
     <div class="im-chat" id="imChat" hidden>
       <div class="im-head">
+        <button class="im-back" id="imBack" type="button" aria-label="返回联系人列表">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M15 18l-6-6 6-6"/>
+          </svg>
+        </button>
         <div class="im-head-av" id="headAv"></div>
         <div class="im-head-txt">
           <div class="im-head-name" id="headName">—</div>
@@ -131,11 +137,12 @@
 </main>
 
 <!-- 添加好友 -->
-<div class="im-modal" id="addModal" hidden>
+<div class="im-modal" id="addModal" role="dialog" aria-modal="true"
+     aria-labelledby="addModalTitle" hidden>
   <div class="im-modal-mask" data-close></div>
   <div class="im-modal-box">
     <div class="im-modal-head">
-      <h3>添加好友</h3>
+      <h3 id="addModalTitle">添加好友</h3>
       <button class="im-x" type="button" data-close aria-label="关闭">&times;</button>
     </div>
 
@@ -166,6 +173,6 @@
   </div>
 </div>
 
-<script src="{{ url_for('static', filename='im.js') }}?v=8"></script>
+<script src="{{ url_for('static', filename='im.js') }}?v=10"></script>
 </body>
 </html>

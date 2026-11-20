@@ -13,6 +13,13 @@
 
   if (!listEl || !bodyEl) return;
 
+  /* 移动端「列表 ↔ 会话」两态：由 CSS 的 .im.chat-open 控制显隐。
+     桌面端该 class 不带样式，双栏布局不受影响。 */
+  var imRoot = document.querySelector('.im');
+  function setChatOpen(on) {
+    if (imRoot) imRoot.classList.toggle('chat-open', !!on);
+  }
+
   var convs = [];
   var friends = [];
   var requests = [];
@@ -201,15 +208,15 @@
       ['复制文本', function () { copyText(m.content || ''); }]
     ];
     var menu = document.createElement('div');
-    menu.style.cssText = 'position:fixed;z-index:300;background:#fff;border:1px solid #e5e7eb;' +
+    menu.style.cssText = 'position:fixed;z-index:300;background:var(--surface);border:1px solid var(--line);' +
       'border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.15);min-width:112px;padding:4px;';
     items.forEach(function (it) {
       var b = document.createElement('button');
       b.type = 'button';
       b.textContent = it[0];
       b.style.cssText = 'display:block;width:100%;text-align:left;border:0;background:none;' +
-        'padding:7px 12px;font-size:13px;color:#111827;cursor:pointer;border-radius:5px;';
-      b.onmouseenter = function () { b.style.background = '#f3f4f6'; };
+        'padding:7px 12px;font-size:var(--font-size-sm);color:var(--text);cursor:pointer;border-radius:5px;';
+      b.onmouseenter = function () { b.style.background = 'var(--surface-muted)'; };
       b.onmouseleave = function () { b.style.background = 'none'; };
       b.addEventListener('click', function () { closeCtxMenu(); it[1](); });
       menu.appendChild(b);
@@ -246,7 +253,7 @@
     if (!quoteTarget) return;
     var bar = document.createElement('div');
     bar.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 10px;' +
-      'background:#f3f4f6;border-left:3px solid #1d4ed8;font-size:12px;color:#6b7280;';
+      'background:var(--surface-muted);border-left:3px solid var(--primary);font-size:var(--font-size-sm);color:var(--muted);';
     var txt = document.createElement('span');
     txt.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
     txt.textContent = '引用 ' + senderName(quoteTarget.sender_id) + '：' + quoteTarget.content;
@@ -254,7 +261,7 @@
     x.type = 'button';
     x.textContent = '×';
     x.title = '取消引用';
-    x.style.cssText = 'border:0;background:none;font-size:18px;line-height:1;cursor:pointer;color:#9ca3af;';
+    x.style.cssText = 'border:0;background:none;font-size:18px;line-height:1;cursor:pointer;color:var(--muted);';
     x.addEventListener('click', clearQuote);
     bar.append(txt, x);
     var host = document.getElementById('imCompose');
@@ -295,10 +302,10 @@
     if (!multiMode) return;
     var bar = document.createElement('div');
     bar.style.cssText = 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 10px;' +
-      'background:#eef2ff;border-bottom:1px solid #dbe3fe;font-size:12px;';
+      'background:var(--info-bg);border-bottom:1px solid var(--info-line);font-size:var(--font-size-sm);';
     var info = document.createElement('span');
     info.textContent = '已选 ' + selectedIds.size + ' 条（上限 50）';
-    info.style.cssText = 'flex:1;color:#3730a3;';
+    info.style.cssText = 'flex:1;color:var(--primary-dark);';
     bar.appendChild(info);
     var all = document.querySelectorAll('.im-msg[data-mid]');
     var btnDefs = [
@@ -323,8 +330,8 @@
       var b = document.createElement('button');
       b.type = 'button';
       b.textContent = d[0];
-      b.style.cssText = 'border:1px solid #c7d2fe;background:#fff;color:#3730a3;' +
-        'padding:3px 10px;border-radius:5px;cursor:pointer;font-size:12px;';
+      b.style.cssText = 'border:1px solid var(--info-line);background:var(--surface);color:var(--primary-dark);' +
+        'padding:3px 10px;border-radius:5px;cursor:pointer;font-size:var(--font-size-sm);';
       b.addEventListener('click', d[1]);
       bar.appendChild(b);
     });
@@ -365,18 +372,18 @@
     if (!ids.length) { toast('请先选择消息'); return; }
     if (!friends.length) { toast('还没有好友可转发'); return; }
     var menu = document.createElement('div');
-    menu.style.cssText = 'position:fixed;z-index:300;background:#fff;border:1px solid #e5e7eb;' +
+    menu.style.cssText = 'position:fixed;z-index:300;background:var(--surface);border:1px solid var(--line);' +
       'border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.15);min-width:180px;padding:4px;';
     var label = document.createElement('div');
     label.textContent = '转发到：';
-    label.style.cssText = 'padding:5px 10px;font-size:12px;color:#9ca3af;';
+    label.style.cssText = 'padding:5px 10px;font-size:var(--font-size-sm);color:var(--muted);';
     menu.appendChild(label);
     friends.forEach(function (f) {
       var b = document.createElement('button');
       b.type = 'button';
       b.textContent = f.nickname || f.real_name;
       b.style.cssText = 'display:block;width:100%;text-align:left;border:0;background:none;' +
-        'padding:7px 10px;font-size:13px;cursor:pointer;border-radius:5px;';
+        'padding:7px 10px;font-size:var(--font-size-sm);cursor:pointer;border-radius:5px;';
       b.addEventListener('click', function () {
         menu.remove();
         var target = convs.find(function (c) { return c.peer_id === f.id; });
@@ -569,6 +576,7 @@
 
     blank.hidden = true;
     chat.hidden = false;
+    setChatOpen(true);
 
     document.getElementById('headName').textContent = '小鲸';
     document.getElementById('headSub').textContent = 'AI 导览员 · 在线';
@@ -621,6 +629,7 @@
     renderList();
     blank.hidden = true;
     chat.hidden = false;
+    setChatOpen(true);
 
     document.getElementById('headName').textContent = c.nickname;
     document.getElementById('headSub').textContent =
@@ -741,8 +750,8 @@
     if (m.forward_from) {
       var fwd = document.createElement('div');
       fwd.textContent = '转发消息';
-      fwd.style.cssText = 'font-size:11px;color:#6b7280;margin-bottom:4px;' +
-        'border-bottom:1px dashed #d1d5db;padding-bottom:3px;';
+      fwd.style.cssText = 'font-size:var(--font-size-xs);color:var(--muted);margin-bottom:4px;' +
+        'border-bottom:1px dashed var(--line-strong);padding-bottom:3px;';
       bubble.appendChild(fwd);
     }
 
@@ -750,8 +759,8 @@
     if (m.quote_id) {
       var q = quotes[String(m.quote_id)];
       var qbox = document.createElement('div');
-      qbox.style.cssText = 'font-size:11.5px;color:#4b5563;background:rgba(0,0,0,.05);' +
-        'border-left:3px solid #1d4ed8;padding:4px 8px;margin-bottom:5px;border-radius:3px;' +
+      qbox.style.cssText = 'font-size:var(--font-size-xs);color:var(--muted);background:rgba(0,0,0,.05);' +
+        'border-left:3px solid var(--primary);padding:4px 8px;margin-bottom:5px;border-radius:3px;' +
         'cursor:pointer;max-width:260px;';
       qbox.textContent = q
         ? senderName(q.sender_id) + '：' + q.content
@@ -779,7 +788,7 @@
     more.className = 'im-msg-more';
     more.textContent = '⋯';
     more.title = '消息操作';
-    more.style.cssText = 'border:0;background:none;color:#9ca3af;font-size:18px;' +
+    more.style.cssText = 'border:0;background:none;color:var(--muted);font-size:18px;' +
       'line-height:1;cursor:pointer;padding:0 6px;opacity:.45;align-self:center;flex:none;';
     more.setAttribute('aria-label', '消息操作');
     more.addEventListener('click', function (e) {
@@ -1109,6 +1118,7 @@
         activePeer = null;
         chat.hidden = true;
         blank.hidden = false;
+        setChatOpen(false);
         loadFriends();
         loadConvs();
       })
@@ -1118,16 +1128,20 @@
   /* ---------- 提示 ---------- */
   function toast(msg) {
     var t = document.createElement('div');
+    t.className = 'toast';
+    t.setAttribute('role', 'status');
     t.textContent = msg;
-    t.style.cssText =
-      'position:fixed;left:50%;top:70px;transform:translateX(-50%);' +
-      'background:#111827;color:#fff;padding:9px 16px;border-radius:8px;' +
-      'font-size:13px;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,.2)';
     document.body.appendChild(t);
     setTimeout(function () { t.remove(); }, 2600);
   }
 
   /* ---------- 启动 ---------- */
+  var backBtn = document.getElementById('imBack');
+  if (backBtn) {
+    backBtn.addEventListener('click', function () {
+      setChatOpen(false);
+    });
+  }
   if (document.getElementById('homeGuideDismiss')) {
     document.getElementById('homeGuideDismiss').addEventListener('click', dismissHomeGuide);
   }

@@ -139,7 +139,7 @@ D:/MySQL/
 | **`schema_chat_migrate.sql` 会删数据** | 删除重复的 `friend_request`（每组只留最小 id）再加唯一约束 | 执行前先备份该表；迁移顺序为 `schema.sql` 优先、其余按文件名排序 |
 | **头像目录属主必须是 `regweb`** | 全量 `deploy.py` 只做 `chown -R root:root`，之后上传头像会静默失败 | 部署后补 `chown -R regweb:regweb /opt/bnu-register/var` |
 | **gunicorn 保持 `--workers 1`** | 限流字典、验证码、登录失败计数、对局房间都在进程内存，加 worker 会全部失效 | 扩容前先迁到 Redis 等外部存储 |
-| **改静态文件必须递增模板里的 `?v=N`** | 浏览器继续用缓存旧代码 | 当前值：`style.css?v=9`、`im.css?v=4`、`im.js?v=8`、`game.js?v=3`、`app.js?v=4`、`avatar-crop.js?v=2`；`im.js` 内还硬编码一份鲸鱼头像版本号 |
+| **改静态文件必须递增模板里的 `?v=N`** | 浏览器继续用缓存旧代码 | 当前值：`style.css?v=11`、`im.css?v=6`、`im.js?v=10`、`game.js?v=5`、`app.js?v=5`、`avatar-crop.js?v=3`、`favicon.svg?v=1`；`im.js` 内还硬编码一份鲸鱼头像版本号 |
 | **改模板 / CRLF 文件用编辑器逐处改，别用 Python 脚本批量重写** | `newline=''` 会把 CRLF 换成 LF，产生整文件噪音 diff | `home.html`、`app.py` 是 CRLF，需按字节或标记处理 |
 
 ### 环境变量与常用命令

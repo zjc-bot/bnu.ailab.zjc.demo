@@ -2,11 +2,11 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}?v=1">
 <title>登录 · BNU AI Lab</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=9">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=11">
 </head>
-<body>
+<body><a class="skip-link" href="#main">跳到主要内容</a>
 
 <header class="topbar">
   <div class="topbar-left">
@@ -17,12 +17,13 @@
     </div>
   </div>
   <div class="topbar-right">
-    <a href="{{ url_for('register') }}" class="btn ghost" style="padding:7px 14px;font-size:13px;">注册</a>
+    <a href="{{ url_for('register') }}" class="btn ghost sm2">注册</a>
   </div>
 </header>
 
-<main class="wrap-narrow">
+<main class="wrap-narrow" id="main">
   <div class="page-head">
+    <p class="eyebrow">BNU AI Lab · 成员系统</p>
     <h1>欢迎回来</h1>
     <p>使用校内邮箱或学号登录。</p>
   </div>
@@ -36,6 +37,7 @@
       <label class="field">
         <span>邮箱或学号</span>
         <input name="login" required maxlength="100" autofocus
+               autocomplete="username"
                placeholder="xxx@mail.bnu.edu.cn 或 202611081065">
       </label>
 
