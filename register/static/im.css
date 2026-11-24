@@ -725,3 +725,150 @@
 .im-req-btns .btn { font-size: var(--font-size-sm); min-height: 44px; }
 .im-online-dot { background: var(--ok); }
 .im-head-av.ai { background: var(--info-bg); color: var(--primary-dark); }
+
+/* ==========================================================================
+   小鲸场景 v2 — 人形立绘 + 分层草地
+   颜色全部走 --stage-* token，与主站编辑式蓝白灰体系对齐
+   ========================================================================== */
+:root {
+  --stage-sky-top: #eaf2f7;
+  --stage-sky-bottom: #d4e4ee;
+  --stage-hill: #c4d8e3;
+  --stage-meadow: #a9c6b4;
+  --stage-meadow-edge: #d2e4c8;
+  --stage-ground: #8fae93;
+  --stage-grass-dark: #6f9678;
+  --stage-grass-light: #bcd6ae;
+  --stage-shadow: rgba(24, 51, 79, .16);
+  --stage-cloud: #fffdf8;
+}
+
+.im-stage {
+  background: linear-gradient(180deg, var(--stage-sky-top) 0%, var(--stage-sky-bottom) 100%);
+  image-rendering: auto;
+}
+.im-stage::before {                 /* 远丘 */
+  content: "";
+  position: absolute; left: -12%; right: -12%; bottom: 40px; height: 76px;
+  border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+  background: var(--stage-hill);
+  opacity: .75;
+  z-index: 1;
+  pointer-events: none;
+}
+.im-stage-scene { z-index: 2; }
+.im-stage-scene::before {            /* 中景草坡 + 受光顶边 */
+  content: "";
+  position: absolute; left: -20%; right: -20%; bottom: 28px; height: 58px;
+  border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+  background: var(--stage-meadow);
+  box-shadow: 0 -3px 0 var(--stage-meadow-edge);
+  pointer-events: none;
+}
+.st-cloud {                         /* 方块云改为柔和云团 */
+  width: 52px; height: 15px;
+  border-radius: 999px;
+  background: var(--stage-cloud);
+  box-shadow:
+    12px -8px 0 -2px var(--stage-cloud),
+    26px -4px 0 -1px var(--stage-cloud),
+    -8px -3px 0 -3px var(--stage-cloud);
+  opacity: .88;
+  top: 26px;
+}
+.st-cloud.c2 { top: 62px; transform: scale(.7); }
+.st-ground {                        /* 亮顶草坡下的草地主体：短草叶，不再用竖条纹 */
+  height: 34px;
+  border-top: 0;
+  background: var(--stage-ground);
+  background-image:
+    linear-gradient(to top, var(--stage-grass-dark) 0 7px, transparent 7px),
+    linear-gradient(to top, var(--stage-grass-light) 0 5px, transparent 5px);
+  background-size: 23px 12px, 37px 12px;
+  background-position: 0 bottom, 13px bottom;
+  background-repeat: repeat-x;
+  z-index: 3;
+}
+.im-stage::after {                  /* 前景草：短、稀疏，盖住角色脚 */
+  content: "";
+  position: absolute; left: 0; right: 0; bottom: 0; height: 12px;
+  background-image:
+    linear-gradient(to top, var(--stage-grass-dark) 0 9px, transparent 9px),
+    linear-gradient(to top, var(--stage-grass-light) 0 6px, transparent 6px);
+  background-size: 41px 12px, 29px 12px;
+  background-position: 7px bottom, 19px bottom;
+  background-repeat: repeat-x;
+  z-index: 5;
+  pointer-events: none;
+}
+
+/* 人形立绘：竖向构图 + 落地投影，消除方形贴纸感 */
+.im-stage-pet {
+  width: 112px; height: 150px;
+  bottom: 26px; left: 50%;
+  z-index: 4;
+  transform: translateX(-50%);
+}
+.im-stage-pet::before {
+  content: "";
+  position: absolute; left: 50%; bottom: -2px;
+  transform: translateX(-50%);
+  width: 92px; height: 13px;
+  background: radial-gradient(ellipse at center, var(--stage-shadow) 0%, rgba(24, 51, 79, 0) 72%);
+  z-index: 0;
+}
+.im-stage-pet img {
+  position: relative; z-index: 1;
+  width: 100%; height: 100%;
+  object-fit: contain;
+  image-rendering: auto;
+  filter: drop-shadow(0 3px 2px rgba(24, 51, 79, .12));
+}
+.im-stage-mood { z-index: 6; }
+
+/* 场景 v2 精修：放大立绘、错开丘陵、补远景灌木，避免横带太空 */
+.im-stage { height: 200px; }
+.im-stage::before { left: -22%; right: auto; width: 86%; bottom: 44px; height: 88px; }
+.im-stage-scene::after {
+  content: "";
+  position: absolute; right: -20%; width: 76%;
+  bottom: 42px; height: 72px;
+  border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+  background: var(--stage-hill);
+  opacity: .5;
+  pointer-events: none;
+}
+.im-stage-scene::before { bottom: 30px; height: 68px; }
+.st-cloud {
+  width: 64px; height: 18px;
+  box-shadow:
+    16px -10px 0 -2px var(--stage-cloud),
+    34px -5px 0 -1px var(--stage-cloud),
+    -10px -4px 0 -3px var(--stage-cloud);
+}
+.st-ground { height: 36px; }
+.st-ground::before, .st-ground::after {
+  content: "";
+  position: absolute; bottom: 26px;
+  width: 26px; height: 16px;
+  border-radius: 50% 50% 0 0;
+  background: var(--stage-grass-dark);
+  opacity: .5;
+}
+.st-ground::before { left: 14%; }
+.st-ground::after { right: 18%; width: 20px; height: 12px; }
+.im-stage::after { height: 14px; }
+.im-stage-pet { width: 132px; height: 176px; bottom: 24px; }
+.im-stage-pet::before { width: 106px; height: 14px; }
+.im-stage-mood { left: 16px; top: 14px; transform: none; }   /* 不压住角色呆毛 */
+
+@media (max-width: 760px) {
+  .im-stage { height: min(28dvh, 168px); }
+  .im-stage-pet { width: 100px; height: 134px; bottom: 20px; }
+  .im-stage::before { bottom: 36px; height: 68px; }
+  .im-stage-scene::after { bottom: 34px; height: 56px; }
+  .im-stage-scene::before { bottom: 24px; height: 52px; }
+  .st-ground { height: 30px; }
+  .im-stage-pet::before { width: 82px; height: 11px; }
+  .st-cloud.c2 { top: 52px; }
+}
