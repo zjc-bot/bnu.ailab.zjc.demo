@@ -1,7 +1,9 @@
 /* 消息界面 */
 .im-page {
-  min-height: 100vh;
-  min-height: 100dvh;
+  /* 必须是确定高度而不是 min-height：否则整条 flex/grid 链会被长消息撑开，
+     .im-body 拿不到可滚动的高度差，overflow:hidden 会把内容直接裁掉。 */
+  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -15,6 +17,7 @@
   width: 100%;
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   max-width: 1280px;
   margin: 0 auto;
   background: var(--surface);
@@ -334,7 +337,12 @@
 
 .im-body {
   flex: 1;
+  min-height: 0;                 /* 允许在 flex 列中收缩，overflow 才有意义 */
   overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
   padding: 16px 20px 20px;
   /* 天空从聊天区顶部一路延伸到场景带，取消边界感。
      scroll 附着：背景固定在可视区，滚动消息时天空不动。 */
