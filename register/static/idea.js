@@ -28,6 +28,29 @@
     });
   }
 
+  // ---------- 领域头条 ----------
+  var featuredBox = document.getElementById('featured');
+  var featuredGrid = document.getElementById('featuredGrid');
+  if (featuredBox && featuredGrid) {
+    function renderFeatured(items) {
+      if (!items || !items.length) { featuredBox.hidden = true; return; }
+      featuredGrid.innerHTML = items.map(function (i) {
+        var excerpt = String(i.content || '').replace(/\s+/g, ' ').slice(0, 62);
+        return '<a class="featured-card" href="/ideas/' + i.id + '">' +
+          '<span class="fcat">' + esc(i.category_label || i.category) + '</span>' +
+          '<span class="flikes">♥ ' + (i.like_count || 0) + '</span>' +
+          '<h3>' + esc(i.title) + '</h3>' +
+          '<p class="fexcerpt">' + esc(excerpt) + '</p>' +
+          '<p class="idea-meta">' + esc(i.author_nickname || i.author_id) + ' · ' + esc(i.created_at) + '</p></a>';
+      }).join('');
+      featuredBox.hidden = false;
+    }
+    // 本地离线验证可注入 window.__FEATURED__，生产正常走 API。
+    if (window.__FEATURED__) renderFeatured(window.__FEATURED__);
+    else req('/api/ideas/featured').then(function (d) { renderFeatured(d.items); })
+      .catch(function () { featuredBox.hidden = true; });
+  }
+
   // ---------- 广场 ----------
   if (list) {
     var fCategory = document.getElementById('fCategory');

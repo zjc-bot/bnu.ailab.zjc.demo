@@ -2,6 +2,23 @@
 .page-head.idea-head p:last-of-type { max-width: 62ch; }
 .idea-head .btn { margin-top: 6px; }
 
+/* 领域头条：每个领域点赞最高的一条 */
+.featured { margin: 8px 0 26px; padding: 20px 22px 22px; background: var(--surface-subtle); border: 1px solid var(--line); border-radius: 12px; }
+.featured-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+.featured-head h2 { margin: 4px 0 0; font-size: 19px; letter-spacing: -.02em; }
+.featured-note { margin: 0; font-size: 12px; color: var(--faint); }
+.featured-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+.featured-card { position: relative; display: block; padding: 15px 16px 14px; background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 8px; color: var(--text); text-decoration: none; transition: border-color .18s, transform .18s; }
+.featured-card:hover { border-color: var(--primary); border-left-color: var(--accent); transform: translateY(-2px); }
+.featured-card .fcat { display: inline-block; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); font-family: ui-monospace, monospace; }
+.featured-card .flikes { float: right; font-size: 12px; color: var(--primary); font-weight: 500; }
+.featured-card h3 { margin: 8px 0 6px; font-size: 15px; line-height: 1.4; letter-spacing: -.01em; }
+.featured-card .fexcerpt { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--muted); }
+.featured-card .idea-meta { margin-top: 10px; }
+
+@media (max-width: 900px) { .featured-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 620px) { .featured-grid { grid-template-columns: 1fr; } .featured { padding: 16px; } }
+
 .idea-filters {
   display: grid; grid-template-columns: 1fr 1.4fr 1fr; gap: 14px;
   margin: 22px 0; padding: 16px; background: var(--surface-subtle);

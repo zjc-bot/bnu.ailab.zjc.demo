@@ -15,6 +15,17 @@ def connect():
     return db.connect()
 
 
+# 领域头条分类中文名；同时作为允许的分类白名单（key 即合法分类）。
+CATEGORY_LABELS = {
+    "ai": "人工智能",
+    "edu": "教育技术",
+    "bio": "生物信息",
+    "energy": "可持续能源",
+    "mat": "材料与传感",
+    "other": "其他",
+}
+
+
 # update_idea 允许写入的列：key 为外部字段名，value 为固定 SQL 语句。
 # 逐列更新而非动态拼 SET 子句，保证 SQL 中不存在任何字符串拼接。
 _UPDATES = {
@@ -179,6 +190,63 @@ def list_ideas(viewer_id, category=None, tag=None, author_id=None, page=1, size=
             )
             items = [_serialize(r) for r in cur.fetchall()]
             return items, total
+
+
+# 领域头条：按分类分区取点赞最高的一条。可见性条件与 list_ideas 完全一致，
+# viewer_id 一律参数化（3 个 %s 均为 viewer_id）；SQL 不硬编码分类白名单。
+_FEATURED_SQL = (
+    "SELECT t.id, t.category, t.title, t.content, t.tags, "
+    "t.like_count, t.favorite_count, t.comment_count, "
+    "t.author_id, t.author_nickname, t.created_at "
+    "FROM ("
+    "  SELECT i.id, i.category, i.title, i.content, i.tags, "
+    "         i.like_count, i.favorite_count, i.comment_count, "
+    "         i.author_id, u.nickname AS author_nickname, i.created_at, "
+    "         ROW_NUMBER() OVER ("
+    "           PARTITION BY i.category "
+    "           ORDER BY i.like_count DESC, i.created_at DESC, i.id DESC"
+    "         ) AS rn "
+    "  FROM idea i "
+    "  LEFT JOIN app_user u ON u.id=i.author_id "
+    "  WHERE i.status='published' AND ("
+    "    i.visibility='public' OR i.author_id=%s "
+    "    OR (i.visibility='friends' AND ("
+    "      EXISTS (SELECT 1 FROM friend f1 "
+    "              WHERE f1.user_id=i.author_id AND f1.friend_id=%s) "
+    "      OR EXISTS (SELECT 1 FROM friend f2 "
+    "                 WHERE f2.user_id=%s AND f2.friend_id=i.author_id)"
+    "    ))"
+    "  )"
+    ") t "
+    "WHERE t.rn=1 "
+    "ORDER BY t.like_count DESC, t.category"
+)
+
+
+def featured_by_category(viewer_id):
+    """领域头条：每个分类点赞数最高、已发布且对 viewer 可见的一条 idea。
+
+    可见性过滤与 list_ideas 完全一致（public 全部可见、friends 仅作者或好友、
+    private 仅作者），只取 status='published'；窗口函数按分类分区取 rn=1。
+    分类白名单与中文名在 Python 侧处理，避免 SQL 硬编码分类值产生耦合。
+    """
+    with connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(_FEATURED_SQL, (viewer_id, viewer_id, viewer_id))
+            rows = cur.fetchall()
+
+    items = []
+    for row in rows:
+        item = _serialize(row)
+        cat = item.get("category")
+        # 忽略 NULL / 空串 / 不在白名单的分类
+        if cat is None or str(cat).strip() == "" or cat not in CATEGORY_LABELS:
+            continue
+        # 未知分类回退为原始值（正常路径下 cat 已在白名单内）
+        item["category_label"] = CATEGORY_LABELS.get(cat, cat)
+        items.append(item)
+    # SQL 已按 like_count DESC, category 排序；上面的过滤仅剔除元素、保持相对顺序
+    return items
 
 
 def update_idea(idea_id, author_id, data):

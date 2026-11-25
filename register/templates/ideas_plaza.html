@@ -40,6 +40,17 @@
     <a class="btn primary" href="{{ url_for('ideas.idea_new') }}">＋ 发布想法</a>
   </div>
 
+  <section class="featured" id="featured" hidden aria-labelledby="featuredTitle">
+    <div class="featured-head">
+      <div>
+        <p class="eyebrow">Editor's picks · 领域头条</p>
+        <h2 id="featuredTitle">每个领域，最受欢迎的那条想法</h2>
+      </div>
+      <p class="featured-note">按点赞数自动选出，随社区投票实时更新</p>
+    </div>
+    <div class="featured-grid" id="featuredGrid"></div>
+  </section>
+
   <div class="idea-filters" role="search">
     <label class="field" style="margin:0">
       <span>分类</span>

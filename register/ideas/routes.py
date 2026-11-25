@@ -213,6 +213,12 @@ def api_idea_list():
     return jsonify(items=items, total=total)
 
 
+@ideas_bp.get("/api/ideas/featured")
+@api_login_required
+def api_idea_featured():
+    return jsonify(items=store.featured_by_category(session["uid"]))
+
+
 @ideas_bp.get("/api/ideas/<int:idea_id>")
 @api_login_required
 def api_idea_get(idea_id):
