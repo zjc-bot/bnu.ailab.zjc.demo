@@ -17,7 +17,7 @@
 | 目录 | 是什么 | 状态 |
 |---|---|---|
 | `webapp/` | 学生信息管理（CRUD + 统计） | 稳定，仅做安全修复 |
-| `register/` | 注册与社区：实名注册、好友 IM、小鲸对话、管理后台、五子棋对战 | 主演进主体 |
+| `register/` | 注册与社区：实名注册、好友 IM、小鲸对话、管理后台、五子棋对战、研究成果展示页（公开门面） | 主演进主体；成果展示页本地已实现待部署 |
 | `neko-world-complete-starter/` | 独立的 AI companion starter（自带 README / `.env.example`） | 参考项目，勿混改 |
 | `sql/` `scripts/` `backup/` | 建表/导入脚本、ECS 运维工具、密钥与数据备份 | 支撑 |
 
@@ -25,12 +25,14 @@
 
 > ⚠️ **本地/CI 与生产解释器版本不一致**：选依赖版本前必须核对生产的 `requires_python` 与 cp310 wheel 是否存在，否则会出现「CI 装得上、生产装不上」。例如 Pillow 13.0.0 要求 `>=3.11`，生产 3.10 无法安装，故 `register/requirements.txt` 固定为 `12.3.0`（3.10 可用的最高版）；详见 §4A。
 
-### 当前安全姿态（重要）
+### 当前安全姿态（重要 · 2026-11-25 更新）
 
-- 域名已购买，但**尚未 ICP 备案**；项目**不公网开放**——这是刻意保持的安全姿态，不要提前开放端口。
-- 访问**只通过 SSH 隧道**；ECS 安全组仅放行 22 端口。
-- `register/deploy/bnuailab.conf` 是**备案后公网化的预置模板（未启用）**；其中的 `listen 80`、XFF 覆盖、`/socket.io` Upgrade 等配置当前不生效。
-- 下方 §7 的"公网化前置清单"在备案完成前**都不需要做，也不要提前做**。
+- **ICP 备案已完成**，`bnuailab.tech` 的 A 记录已解析到 `47.118.28.10`。
+- **公网化进行中，尚未开放**：ECS 安全组仍仅放行 22 端口，80/443 不通；访问仍只通过 SSH 隧道。不要提前认为站已上线。
+- `register/deploy/bnuailab.conf` 是原 HTTP 预置模板（未启用）；HTTPS 版模板见 `register/deploy/bnuailab.conf HTTPS版.template`（含 443、HSTS、Upgrade、XFF 覆盖）。
+- **公网化前置清单**（详见工作区 `公网化整改操作手册.md`）：① 申请 SSL 证书并配 443；② 安全组限源 IP 灰度放行 80/443；③ 部署 SSRF pin IP 修复与 admin 二次认证；④ 给管理员配二次认证邮箱；⑤ 本机 DNS 换 114（阿里云 223.5.5.5 对该域解析超时）。
+- 代码侧已就绪（SSRF pin IP、admin 邮件二次认证，102 项 pytest 全绿），但**尚未增量部署到生产**。
+- 公网化前不要录入真实个人信息；上线必须走 HTTPS。
 
 各子系统的详细说明见 `webapp/README.md`（安全设计、部署、运维命令齐全）。
 
@@ -44,6 +46,9 @@
 |---|---|---|
 | `打开学生管理.bat` | `http://127.0.0.1:8080` | 学生信息管理 |
 | `打开注册系统.bat` | `http://127.0.0.1:8082/register` | 注册与社区（本地 8082 → 服务器 8081），含 `/games` 对战大厅 |
+| 成果展示（新增） | `http://127.0.0.1:8082/archive` | 研究成果展示页，公开可访问；**根路径 `/` 行为不变**（未登录仍跳 `/register`、已登录跳 `/home`） |
+
+双击 `打开注册系统.bat` 后，可在 `http://127.0.0.1:8082/archive` 查看研究成果展示页（纸片档案风格，纯静态示例数据；本地已实现待部署）。
 
 关闭窗口即断开隧道、页面失效。手动等价命令：
 
@@ -69,9 +74,15 @@ D:/MySQL/
 │   ├── admin.py            管理后台蓝图（约 609 行）
 │   ├── schema*.sql         11 个分模块脚本（含 4 个幂等迁移）
 │   ├── games/              对战子系统：Socket.IO 事件 + 房间 + 服务端规则
-│   ├── tests/              7 个测试文件，75 项 pytest
+│   ├── tests/              8 个测试文件，90 项 pytest
 │   ├── templates/          Jinja2 模板（home.html 等）
+│   │   └── archive.html    研究成果展示页（公开门面，静态示例数据）
 │   ├── static/             JS/CSS；im.js 为当前 IM 入口
+│   │   ├── archive.css     成果展示页样式（?v=1）
+│   │   └── archive.js      成果展示页脚本（?v=1，点击卡片展开详情；优先读 /api/archive.json）
+│   ├── archive_api.py      研究成果只读 API 蓝图（GET /api/archive.json）
+│   ├── archive_data.py     研究成果数据层（无 DB 凭据时返回空，前端自动降级静态数据）
+│   └── schema_archive.sql  新增表 research_achievement（幂等，可单独执行，不影响现有表）
 │   └── deploy/             ECS 部署脚本（全量 / 增量 / nginx 模板）
 ├── sql/                    数据脚本（含真实学生数据，归档后不再改）
 ├── scripts/                Windows 本地运维（ECS 探针等）
@@ -107,7 +118,9 @@ D:/MySQL/
 - **服务器增量部署（2026-11-19）**：备份 → 迁移 → 授权 → 上传 → 重启 → 验证全通过；服务 `active`、`.env` 未变、路由全通、错误日志无。凭据仅用进程环境变量，未入库。
 - **头像上传应用层加固（2026-11-19，选项 3）**：两处上传接口在交给 Pillow 之前先按文件头白名单（JPEG / PNG / WebP）识别真实格式、二次确认 Pillow 选中的插件、`load()` 之前限 4000 万像素；PSD / TIFF / BMP / GIF / PDF 等载荷进不了原生解析器。新增 24 项回归，累计 75 项。
 - **生产依赖同步（2026-11-19，选项 1）**：服务器已装 Pillow `12.3.0`（3.10 可用的最高版）；本轮无数据库迁移，故按增量脚本第 3–7 步做等价最小同步，跳过 DB 步骤。
-- SQL 注入、XSS、CSRF、会话固定、CSV 注入均已防护，安全响应头齐全；`register` 现有 **75 项 pytest**（7 个文件）全过。
+- **对局归档可靠性与状态机修复（2026-11-20）**：归档失败不再静默销毁房间（保留 `moves` 唯一副本 + 完整着法写日志可人工补录），上线/刷新邀请时自动补偿重试，成功后才释放房间；未归档房间禁止被覆盖开新局，`sweep` 也不会清理它们。房间因重启消失时凭 `game_invite` 重建并校验邀请归属/好友关系/会话，消除死邀请；已落子的活跃棋盘不再被重新邀请复用；认输/AI 异常收局同样纳入归档流程。AI 困难档搜索加节点预算，避免一次落子长占线程。新增 15 项回归，累计 **90 项 pytest**（8 个文件）全过；**2026-11-20 20:10 已增量部署生产**，`.env` 未变、服务 active、路由与静态资源全通。
+- SQL 注入、XSS、CSRF、会话固定、CSV 注入均已防护，安全响应头齐全；`register` 现有 **90 项 pytest**（8 个文件）全过。
+- **研究成果展示页（2026-11-25，本地已实现待部署）**：新增公开路由 `GET /archive` 渲染 `archive.html`（传 `csrf`、`logged`），纸片档案风格 8 张成果卡 + 5 张统计贴纸（含 Join in 按钮与展开详情），数据为前端静态示例；**根路径 `/` 行为不变**（未登录跳 `/register`、已登录跳 `/home`），`/archive` 为独立新增入口，复用现有认证、不新增 DB 表、不改任何现有页面。
 
 ### 进行中 / 待决策
 
@@ -139,7 +152,7 @@ D:/MySQL/
 | **`schema_chat_migrate.sql` 会删数据** | 删除重复的 `friend_request`（每组只留最小 id）再加唯一约束 | 执行前先备份该表；迁移顺序为 `schema.sql` 优先、其余按文件名排序 |
 | **头像目录属主必须是 `regweb`** | 全量 `deploy.py` 只做 `chown -R root:root`，之后上传头像会静默失败 | 部署后补 `chown -R regweb:regweb /opt/bnu-register/var` |
 | **gunicorn 保持 `--workers 1`** | 限流字典、验证码、登录失败计数、对局房间都在进程内存，加 worker 会全部失效 | 扩容前先迁到 Redis 等外部存储 |
-| **改静态文件必须递增模板里的 `?v=N`** | 浏览器继续用缓存旧代码 | 当前值：`style.css?v=11`、`im.css?v=6`、`im.js?v=10`、`game.js?v=5`、`app.js?v=5`、`avatar-crop.js?v=3`、`favicon.svg?v=1`；`im.js` 内还硬编码一份鲸鱼头像版本号 |
+| **改静态文件必须递增模板里的 `?v=N`** | 浏览器继续用缓存旧代码 | 当前值：`style.css?v=11`、`im.css?v=10`、`im.js?v=10`、`game.js?v=5`、`app.js?v=5`、`avatar-crop.js?v=3`、`favicon.svg?v=1`、`archive.css?v=1`、`archive.js?v=2`（后两项本次新增，archive.js 经安全审查后已递增到 2）；`im.js` 内还硬编码一份鲸鱼头像版本号 |
 | **改模板 / CRLF 文件用编辑器逐处改，别用 Python 脚本批量重写** | `newline=''` 会把 CRLF 换成 LF，产生整文件噪音 diff | `home.html`、`app.py` 是 CRLF，需按字节或标记处理 |
 
 ### 环境变量与常用命令
@@ -154,7 +167,7 @@ D:/MySQL/
 # 本地开发（register，端口 8081）
 cd D:/MySQL/register && SECRET_KEY=xxx python app.py
 
-# 测试：register 75 项 / webapp 16 项自检（后者不连库）
+# 测试：register 90 项 / webapp 16 项自检（后者不连库）
 cd D:/MySQL/register && pytest
 python D:/MySQL/webapp/tests/selftest.py
 

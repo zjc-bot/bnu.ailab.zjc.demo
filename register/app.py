@@ -20,12 +20,13 @@ import secrets
 import socket
 import time
 from functools import wraps
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 # 老版本 Python 的 mimetypes 表里没有 webp，显式注册
 mimetypes.add_type("image/webp", ".webp")
 
 import requests
+from requests.adapters import HTTPAdapter
 from flask import (
     Flask, Response, abort, jsonify, redirect, render_template,
     request, session, url_for,
@@ -38,6 +39,7 @@ import captcha
 import db
 import mailer
 import secret_box
+from archive_api import archive_bp  # 新增：研究成果只读 API（无凭据时自动降级）
 from games import init_games, socketio
 
 app = Flask(__name__)
@@ -260,6 +262,11 @@ def index():
     if session.get("uid"):
         return redirect(url_for("home"))
     return redirect(url_for("register"))
+
+
+@app.get("/archive")
+def archive():
+    return render_template("archive.html", csrf=_csrf(), logged=bool(session.get("uid")))
 
 
 @app.get("/privacy")
@@ -672,54 +679,121 @@ def games_page():
 AI_BASE = os.environ.get("AI_BASE_URL", "https://api.deepseek.com").rstrip("/")
 
 # SSRF 防护：用户自填的 base_url 必须是公网 https 地址。
-# 解析出的任一 IP 落在私网/环回/链路本地/保留段即拒绝；禁止重定向。
-def _base_url_safe(url):
-    """返回 (ok, 原因)。仅用于校验用户自填的 base_url。"""
+# 关键点（DNS 重绑定修复）：校验阶段解析出的 IP 会被"钉住"，请求阶段直接连这个 IP，
+# 不再让 requests/urllib3 二次解析域名 —— 这样"校验公网、连接内网"的 TOCTOU 窗口消失。
+def _bad_ip(ip_text):
+    """IP 是否落在私网/环回/链路本地/保留段（这些地址一律不允许作为上游）。"""
+    try:
+        ip = ipaddress.ip_address(ip_text)
+    except ValueError:
+        return True
+    return (ip.is_private or ip.is_loopback or ip.is_link_local
+            or ip.is_reserved or ip.is_multicast or ip.is_unspecified)
+
+
+class _PinnedHTTPSAdapter(HTTPAdapter):
+    """把连接钉到已校验的 IP，同时让 TLS SNI / 证书校验仍使用原域名。
+
+    urllib3 支持 server_hostname / assert_hostname：
+      - server_hostname：TLS 握手 SNI 用域名（上游证书才能匹配）
+      - assert_hostname：校验证书时把"连接到的 IP"当成域名来核对
+    连接目标本身是 IP（由 _pinned_url 生成），因此不会再触发 DNS 解析。
+    """
+
+    def __init__(self, hostname, **kwargs):
+        self._hostname = hostname
+        super().__init__(**kwargs)
+
+    def init_poolmanager(self, connections, maxsize, block=False, **pool_kwargs):
+        pool_kwargs["server_hostname"] = self._hostname
+        pool_kwargs["assert_hostname"] = self._hostname
+        return super().init_poolmanager(connections, maxsize, block, **pool_kwargs)
+
+
+def _base_url_pinned(url):
+    """校验并返回 (ok, 原因, pinned_ips)。pinned_ips 是可安全连接的公网 IP。"""
     try:
         p = urlparse(url)
     except Exception:
-        return False, "Base URL 无法解析"
+        return False, "Base URL 无法解析", []
     if p.scheme != "https":
-        return False, "Base URL 必须使用 https"
+        return False, "Base URL 必须使用 https", []
     if not p.hostname or p.username or p.password or p.query or p.fragment:
-        return False, "Base URL 含有非法组成部分"
+        return False, "Base URL 含有非法组成部分", []
     host = p.hostname.lower().rstrip(".")
     if host == "localhost" or host.endswith(".local") or host.endswith(".internal"):
-        return False, "不允许使用本地地址"
-
-    def bad_ip(ip_text):
-        try:
-            ip = ipaddress.ip_address(ip_text)
-        except ValueError:
-            return True
-        return (ip.is_private or ip.is_loopback or ip.is_link_local
-                or ip.is_reserved or ip.is_multicast or ip.is_unspecified)
+        return False, "不允许使用本地地址", []
 
     # 字面 IP 直接判定
     try:
         ipaddress.ip_address(host)
-        if bad_ip(host):
-            return False, "不允许使用内网或保留地址"
+        if _bad_ip(host):
+            return False, "不允许使用内网或保留地址", []
     except ValueError:
         pass  # 域名，继续 DNS 解析
 
     try:
         port = p.port or 443   # p.port 对畸形端口（如 :abc / :99999）抛 ValueError
     except ValueError:
-        return False, "Base URL 端口不合法"
+        return False, "Base URL 端口不合法", []
     if not (1 <= port <= 65535):
-        return False, "Base URL 端口不合法"
+        return False, "Base URL 端口不合法", []
 
     try:
         infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
     except OSError:
-        return False, "Base URL 域名无法解析"
+        return False, "Base URL 域名无法解析", []
     if not infos:
-        return False, "Base URL 域名无法解析"
+        return False, "Base URL 域名无法解析", []
+    ips = []
     for info in infos:
-        if bad_ip(info[4][0]):
-            return False, "域名解析到内网或保留地址"
-    return True, ""
+        ip = info[4][0]
+        if _bad_ip(ip):
+            return False, "域名解析到内网或保留地址", []
+        if ip not in ips:
+            ips.append(ip)
+    return True, "", ips
+
+
+def _base_url_safe(url):
+    """兼容旧接口：返回 (ok, 原因)。内部复用 _base_url_pinned。"""
+    ok, why, _ = _base_url_pinned(url)
+    return ok, why
+
+
+def _pinned_post(url, pinned_ips, **kwargs):
+    """向已校验的 base_url 发 POST，连接钉在 pinned_ips 上，杜绝二次 DNS 解析。
+
+    - 用 IP 替换 URL 主机部分（Host 头仍带原域名，便于上游虚拟主机名路由）
+    - 每个候选 IP 依次尝试，全部失败则抛最后一个异常
+    - allow_redirects 强制为 False，防止跳转绕过校验
+    - pinned_ips 为空（系统默认 base）时回退普通请求
+    """
+    if not pinned_ips:
+        kwargs["allow_redirects"] = False
+        return requests.post(url, **kwargs)
+    p = urlparse(url)
+    host = p.hostname
+    port = p.port or 443
+    headers = dict(kwargs.pop("headers", {}) or {})
+    headers.setdefault("Host", host if port == 443 else f"{host}:{port}")
+    kwargs["headers"] = headers
+    kwargs["allow_redirects"] = False
+    errors = []
+    for ip in pinned_ips:
+        try:
+            pinned = urlunparse(
+                (p.scheme, f"{ip}:{port}" if port != 443 else ip,
+                 p.path, p.params, p.query, p.fragment)
+            )
+            s = requests.Session()
+            s.mount("https://", _PinnedHTTPSAdapter(host))
+            return s.post(pinned, **kwargs)
+        except requests.RequestException as e:
+            errors.append(e)
+    if errors:
+        raise errors[-1]
+    raise requests.RequestException("没有可用的上游地址")
 AI_KEY = os.environ.get("AI_API_KEY", "")
 
 EMO_RE = re.compile(r"\[\[emo:(\w+)\]\]")
@@ -838,8 +912,9 @@ def chat():
             byok = True
             # 保存时的校验可能已过时（域名被改指向内网）：请求前重校验一次。
             # 注意这不防毫秒级 DNS 重绑定；彻底修需 pin IP，列入公网化前置项。
+            pinned_ips = []
             if use_base != AI_BASE:
-                safe, why = _base_url_safe(use_base)
+                safe, why, pinned_ips = _base_url_pinned(use_base)
                 if not safe:
                     app.logger.warning("BYOK base_url 运行时校验失败 uid=%s why=%s", uid, why)
                     return jsonify(error="自带 API 地址已不安全，请重新设置"), 400
@@ -876,8 +951,15 @@ def chat():
         ef = _EmotionFilter()
         yield _sse("start", {"model": model})
         try:
-            with requests.post(
-                use_base + "/chat/completions",
+            # 仅当用户自填了 base_url（已校验并钉住 IP）才走钉住路径；
+            # 系统默认 base 由管理员配置，走原 requests.post（可信）。
+            url = use_base + "/chat/completions"
+            if pinned_ips:
+                post_fn = lambda target, **kw: _pinned_post(target, pinned_ips, **kw)
+            else:
+                post_fn = requests.post
+            with post_fn(
+                url,
                 headers={
                     "Authorization": "Bearer " + use_key,
                     "Content-Type": "application/json",
@@ -885,7 +967,6 @@ def chat():
                 json={"model": model, "messages": msgs, "stream": True},
                 stream=True,
                 timeout=(10, 180),
-                allow_redirects=False,   # 防止跳转到内网地址（SSRF）
             ) as r:
                 if r.status_code != 200:
                     app.logger.warning("上游 %s：%s", r.status_code, r.text[:200])
@@ -1514,13 +1595,14 @@ def profile():
 
 def _probe_api_key(api_key, base_url):
     """用一次极小的请求验证 key 是否可用。"""
+    pinned_ips = []
     if base_url:
-        safe, why = _base_url_safe(base_url)
+        safe, why, pinned_ips = _base_url_pinned(base_url)
         if not safe:
             return False, why
     try:
-        r = requests.post(
-            (base_url or AI_BASE) + "/chat/completions",
+        r = _pinned_post(
+            (base_url or AI_BASE) + "/chat/completions", pinned_ips,
             headers={"Authorization": "Bearer " + api_key},
             json={
                 "model": "deepseek-chat",
@@ -1529,7 +1611,6 @@ def _probe_api_key(api_key, base_url):
                 "stream": False,
             },
             timeout=15,
-            allow_redirects=False,   # 防止跳转绕过 base_url 白名单（SSRF）
         )
         if r.status_code == 200:
             return True, ""
@@ -1636,6 +1717,9 @@ def change_password():
     session.clear()          # 改密后强制重新登录
     return redirect(url_for("login_page", pw=1))
 
+
+# 注册研究成果只读 API 蓝图（新增，纯增量）。
+app.register_blueprint(archive_bp)
 
 # 绑定 Socket.IO（好友对战通道）。gunicorn 入口 app:app 不受影响。
 init_games(app)

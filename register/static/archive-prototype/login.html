@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>欢迎回来 · 登录</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body class="auth-body">
+<div class="auth-wrap">
+  <main class="auth-card">
+    <div class="stamp">WELCOME<br />BACK</div>
+    <span class="idtag">SIGN IN / 档案室入口</span>
+    <h1>欢迎回来</h1>
+    <p class="lede">登录以继续查看你收藏的档案与红笔批注。</p>
+
+    <form id="loginForm" novalidate>
+      <label>邮箱 *
+        <input name="email" type="email" autocomplete="email" placeholder="name@institute.edu" />
+      </label>
+      <label>密码 *
+        <input name="pwd" type="password" autocomplete="current-password" placeholder="输入密码" />
+      </label>
+      <label class="check"><input name="remember" type="checkbox" /> 记住我</label>
+      <div class="err" id="err" role="alert"></div>
+      <button class="submit" type="submit">登录 →</button>
+    </form>
+
+    <div class="links">
+      <a href="#">忘记密码？</a>
+      <a href="register.html">还没有账号？免费注册</a>
+      <a class="back" href="index.html">← 返回成果桌面</a>
+    </div>
+  </main>
+</div>
+<script>
+document.getElementById("loginForm").addEventListener("submit", function (e) {
+  e.preventDefault();
+  const f = new FormData(this);
+  const err = document.getElementById("err");
+  const email = String(f.get("email") || "").trim();
+  const pwd = String(f.get("pwd") || "");
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return err.textContent = "邮箱格式不对";
+  if (pwd.length < 8) return err.textContent = "邮箱或密码有误";
+  err.textContent = "";
+  location.href = "index.html";
+});
+</script>
+</body>
+</html>

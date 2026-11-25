@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>加入研究档案室 · 注册</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body class="auth-body">
+<div class="auth-wrap">
+  <main class="auth-card">
+    <div class="stamp">ARCHIVE<br />MEMBER</div>
+    <span class="idtag">REGISTER / 加入档案室</span>
+    <h1>加入研究档案室</h1>
+    <p class="lede">创建账号后，你可以收藏纸片、下载完整档案，并把自己的成果放上这张桌面。</p>
+
+    <form id="regForm" novalidate>
+      <div class="grid2">
+        <label>姓名 *
+          <input name="name" autocomplete="name" placeholder="如何称呼你" />
+        </label>
+        <label>机构或院系 *
+          <input name="org" autocomplete="organization" placeholder="学校 / 院系 / 实验室" />
+        </label>
+      </div>
+      <label>邮箱 *
+        <input name="email" type="email" autocomplete="email" placeholder="name@institute.edu" />
+      </label>
+      <label>研究方向
+        <select name="field">
+          <option value="">请选择（可选）</option>
+          <option>人工智能</option>
+          <option>教育技术</option>
+          <option>生物信息</option>
+          <option>可持续能源</option>
+          <option>材料与传感</option>
+          <option>其他</option>
+        </select>
+      </label>
+      <div class="grid2">
+        <label>密码 *
+          <input name="pwd" type="password" autocomplete="new-password" placeholder="至少 8 位" />
+        </label>
+        <label>确认密码 *
+          <input name="pwd2" type="password" autocomplete="new-password" placeholder="再输入一次" />
+        </label>
+      </div>
+      <label class="check"><input name="agree" type="checkbox" /> 我已阅读并同意《档案室使用说明》</label>
+      <div class="err" id="err" role="alert"></div>
+      <button class="submit" type="submit">创建账号 →</button>
+    </form>
+
+    <div class="links">
+      <a href="login.html">已有账号？登录</a>
+      <a class="back" href="index.html">← 返回成果桌面</a>
+    </div>
+  </main>
+</div>
+<script>
+document.getElementById("regForm").addEventListener("submit", function (e) {
+  e.preventDefault();
+  const f = new FormData(this);
+  const err = document.getElementById("err");
+  const get = k => String(f.get(k) || "").trim();
+  if (!get("name") || !get("org")) return err.textContent = "请填写姓名与机构";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(get("email"))) return err.textContent = "邮箱格式不对";
+  if (get("pwd").length < 8) return err.textContent = "密码至少 8 位";
+  if (get("pwd") !== get("pwd2")) return err.textContent = "两次密码不一致";
+  if (!f.get("agree")) return err.textContent = "请先同意使用说明";
+  err.textContent = "";
+  location.href = "index.html";
+});
+</script>
+</body>
+</html>

@@ -14,12 +14,23 @@
 | 旧说法 | 当前实际 |
 |---|---|
 | 早期文档写 6 / 9 / 10 个 schema | 当前为 **11 个**（含 4 个幂等迁移），deploy 的 `glob` 全量执行 |
-| 早期文档写 13 / 32 / 41 项测试 | 当前为 **75 项 pytest**（7 文件），本地全过（含 24 项头像上传加固回归）|
+| 早期文档写 13 / 32 / 41 项测试 | 当前为 **90 项 pytest**（8 文件），本地全过（含 24 项头像上传加固 + 15 项归档可靠性回归）|
 | Charter 说"无 WebSocket" | 已改：SSE（AI 流式）+ IM 轮询 + Socket.IO（对局，本地已实现）|
 | 无右键菜单 | 已实现引用/转发/删除/多选；且额外加了「⋯」按钮入口（右键在触摸设备和部分浏览器不可靠）|
 | SSRF、admin 白名单、headers、终局房间、认输覆盖、AI 扣费、未读误标、UA 转义、和棋、重置令牌竞态…… | 两轮审查共修 26 + 11 项，均已提交 |
+| "归档失败只记日志不影响对局" | 旧实现会**紧接着无条件销毁房间**，棋谱 `moves` 永久丢失。2026-11-20 已修：成功才销毁，失败保留房间 24h + 完整着法写日志可补录，上线时幂等重试；详见 `PROJECT_CHARTER.md` §8.3 |
+| "邀请持久化后接收方上线即可加入" | 房间在内存、邀请在 DB，进程重启后原会变成死邀请。2026-11-20 已修：`game:join` 凭有效邀请重建房间（校验归属/好友/会话） |
 
 **结论**：文档曾落后于代码，现已同步。若你的信息来自更早的快照，请以本文件和源码为准。
+
+### 1.1 2026-11-25 新增：研究成果展示页（公开门面）
+
+- 新增公开路由 `GET /archive` → 渲染 `archive.html`（传 `csrf`、`logged`）；**根路径 `/` 行为保持不变**（未登录跳 `/register`、已登录跳 `/home`），`/archive` 仅作独立新增入口，不改动任何现有页面与路由。
+- 纸片档案风格：8 张成果卡 + 5 张统计贴纸，含 Join in 按钮；数据为前端静态示例，替换真实研究资料只需改模板内的数据数组。
+- 新增静态资源 `static/archive.css?v=1`、`static/archive.js?v=2` 与模板 `templates/archive.html`；点击卡片可展开详情（研究方法/发现/意义三段）。`archive.js` 经安全审查修复了 HTML 转义（XSS）、字段兜底与 DB 正文优先读取，版本递增为 2。
+- **MySQL 数据层（新增，纯增量）**：`archive_api.py` 提供只读 `GET /api/archive.json`（已在 app.py 注册蓝图）；`archive_data.py` 从环境变量 `DB_*` 读 `research_achievement` 表，**凭据缺失或查询失败时返回空数组**，前端自动保留静态示例数据；`schema_archive.sql` 为幂等建表脚本（`CREATE TABLE IF NOT EXISTS`，不影响现有表）。当前未配置凭据 → API 返回 `source:static`。
+- **复用现有认证与路由，不新增数据库表、不改 schema、不动认证机制**。
+- **状态：本地已实现，待部署**（尚未随服务器增量部署上线）。
 
 ---
 
@@ -88,6 +99,7 @@
 10. **新功能进 `register/`**，游戏代码进 `register/games/`，禁止新建无语义目录。
 11. **改架构先改 `PROJECT_CHARTER.md`**，记录决策再动代码。
 12. **删除前先备份、先列表、先确认**，移到回收站，不永久删除。
+13. **成果展示页数据与 UI 集中在 `templates/archive.html` + `static/archive.*`**：当前为前端静态示例数据，换真实研究资料只需改模板内的数据数组（不动后端 / DB）；改这些静态文件时记得递增模板里的 `?v=N`。
 
 ---
 
@@ -103,7 +115,7 @@
 
 ```bash
 cd D:/MySQL
-pytest register/tests/ -q          # 应 75 passed
+pytest register/tests/ -q          # 应 90 passed
 python -m compileall -q register webapp scripts
 node --check register/static/im.js
 node --check register/static/game.js
