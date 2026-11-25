@@ -113,16 +113,15 @@ def _validate(data, partial=False):
         out["content_hash"] = hashlib.sha256(content.encode("utf-8")).hexdigest()
 
     if "category" in data or not partial:
-        category = str(data.get("category") or "").strip() or None
-        if category and category not in CATEGORIES:
-            raise ValueError("分类不在允许范围内")
+        # 分类可自定义，不再做白名单校验（仅限制长度）。
+        category = str(data.get("category") or "").strip()[:60] or None
         out["category"] = category
 
     if "tags" in data or not partial:
         out["tags"] = _normalize_tags(data.get("tags"))
 
     if "visibility" in data or not partial:
-        visibility = str(data.get("visibility") or "friends").strip()
+        visibility = str(data.get("visibility") or "public").strip()
         if visibility not in VISIBILITIES:
             raise ValueError("可见性不在允许范围内")
         out["visibility"] = visibility
@@ -135,12 +134,25 @@ def _validate(data, partial=False):
     return out
 
 
+
+
+@ideas_bp.after_request
+def _bust_archive_cache(resp):
+    """idea 写操作成功后让公开页缓存立即失效，避免撤回残留窗口。"""
+    if request.method in ("POST", "PUT", "DELETE", "PATCH") and resp.status_code < 400:
+        try:
+            from archive_api import invalidate_cache
+            invalidate_cache()
+        except Exception:
+            pass
+    return resp
+
 def _forbidden():
     return jsonify(error="CSRF 校验失败"), 403
 
 
 def _missing():
-    return jsonify(error="未找到该创意"), 404
+    return jsonify(error="未找到该 idea"), 404
 
 
 # ---------- 页面路由 ----------
@@ -206,6 +218,7 @@ def api_idea_list():
         session["uid"],
         category=request.args.get("category") or None,
         tag=request.args.get("tag") or None,
+        q=request.args.get("q") or None,
         author_id=request.args.get("author", type=int),
         page=request.args.get("page", 1, type=int),
         size=request.args.get("size", 20, type=int),
@@ -216,7 +229,14 @@ def api_idea_list():
 @ideas_bp.get("/api/ideas/featured")
 @api_login_required
 def api_idea_featured():
-    return jsonify(items=store.featured_by_category(session["uid"]))
+    return jsonify(items=store.featured_by_category())
+
+
+@ideas_bp.get("/api/tags")
+@api_login_required
+def api_tag_list():
+    """标签字典：关键词搜索 + 置顶优先，供管理与筛选共用。"""
+    return jsonify(items=store.list_tags(q=request.args.get("q") or None))
 
 
 @ideas_bp.get("/api/ideas/<int:idea_id>")

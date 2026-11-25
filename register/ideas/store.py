@@ -15,7 +15,8 @@ def connect():
     return db.connect()
 
 
-# 领域头条分类中文名；同时作为允许的分类白名单（key 即合法分类）。
+# 常见分类的中文展示名（仅供显示，不再是校验白名单）。
+# 分类与标签均可自定义，自定义值原样显示。
 CATEGORY_LABELS = {
     "ai": "人工智能",
     "edu": "教育技术",
@@ -77,11 +78,13 @@ def create_idea(author_id, data):
                     data.get("category"),
                     data.get("tags"),
                     data.get("status", "draft"),
-                    data.get("visibility", "friends"),
+                    data.get("visibility", "public"),
                     data.get("content_hash"),
                 ),
             )
             idea_id = cur.lastrowid
+            if data.get("tags"):
+                sync_idea_tags(conn, idea_id, data.get("tags"))
             conn.commit()
             return idea_id
 
@@ -133,21 +136,31 @@ def can_view_idea(idea_id, viewer_id):
             return _can_view(cur, idea_id, viewer_id)
 
 
-def list_ideas(viewer_id, category=None, tag=None, author_id=None, page=1, size=20):
+def list_ideas(viewer_id, category=None, tag=None, author_id=None, page=1, size=20, q=None):
     """分页列表，返回 (items, total)。可见性过滤在 SQL 层完成。
 
-    category / tag / author 三个筛选项用「%s IS NULL OR ...」表达，
-    避免任何动态 SQL 拼接；tag 用 FIND_IN_SET 匹配逗号分隔标签。
+    筛选项一律用「%s IS NULL OR ...」表达，避免任何动态 SQL 拼接。
+    q 为关键词：参数化 LIKE 匹配 title / content / tags（修复原只按标签
+    精确匹配的缺口）；tag 仍支持按单个标签精确筛选。
     """
     page = max(1, int(page or 1))
     size = min(100, max(1, int(size or 20)))
     offset = (page - 1) * size
+    # 关键词只保留普通字符，去掉 % 与 _ 以避免 LIKE 通配符注入。
+    clean = "".join(ch for ch in str(q or "").strip() if ch not in ("%", "_"))[:60]
+    kw = ("%" + clean + "%") if clean else None
+    kw4 = [kw, kw, kw, kw] if kw else [None] * 4
     params = [
         viewer_id, viewer_id, viewer_id,
         category, category,
         tag, tag,
         author_id, author_id,
+        *kw4,
     ]
+
+    # 关键词条件：1 个判空 + 3 个 LIKE = 4 个 %s；kw 为 None 时整段恒真。
+    _KW = ("AND (%s IS NULL OR i.title LIKE %s "
+           "OR i.content LIKE %s OR i.tags LIKE %s)")
 
     with connect() as conn:
         with conn.cursor() as cur:
@@ -163,7 +176,7 @@ def list_ideas(viewer_id, category=None, tag=None, author_id=None, page=1, size=
                 "))) "
                 "AND (%s IS NULL OR i.category=%s) "
                 "AND (%s IS NULL OR FIND_IN_SET(%s, i.tags)>0) "
-                "AND (%s IS NULL OR i.author_id=%s)",
+                "AND (%s IS NULL OR i.author_id=%s) " + _KW,
                 params,
             )
             total = cur.fetchone()["total"]
@@ -184,7 +197,7 @@ def list_ideas(viewer_id, category=None, tag=None, author_id=None, page=1, size=
                 "))) "
                 "AND (%s IS NULL OR i.category=%s) "
                 "AND (%s IS NULL OR FIND_IN_SET(%s, i.tags)>0) "
-                "AND (%s IS NULL OR i.author_id=%s) "
+                "AND (%s IS NULL OR i.author_id=%s) " + _KW + " "
                 "ORDER BY i.created_at DESC, i.id DESC LIMIT %s OFFSET %s",
                 params + [size, offset],
             )
@@ -192,61 +205,95 @@ def list_ideas(viewer_id, category=None, tag=None, author_id=None, page=1, size=
             return items, total
 
 
-# 领域头条：按分类分区取点赞最高的一条。可见性条件与 list_ideas 完全一致，
-# viewer_id 一律参数化（3 个 %s 均为 viewer_id）；SQL 不硬编码分类白名单。
+# 领域头条：与 /api/archive.json 共用同一公开口径（published + public），
+# **不带 viewer_id**，从结构上杜绝 friends/private/draft 进入公开展示位。
 _FEATURED_SQL = (
-    "SELECT t.id, t.category, t.title, t.content, t.tags, "
+    "SELECT t.id, t.category, t.title, t.tags, "
     "t.like_count, t.favorite_count, t.comment_count, "
-    "t.author_id, t.author_nickname, t.created_at "
+    "t.author_nickname, t.created_at "
     "FROM ("
-    "  SELECT i.id, i.category, i.title, i.content, i.tags, "
+    "  SELECT i.id, i.category, i.title, i.tags, "
     "         i.like_count, i.favorite_count, i.comment_count, "
-    "         i.author_id, u.nickname AS author_nickname, i.created_at, "
+    "         u.nickname AS author_nickname, i.created_at, "
     "         ROW_NUMBER() OVER ("
     "           PARTITION BY i.category "
     "           ORDER BY i.like_count DESC, i.created_at DESC, i.id DESC"
     "         ) AS rn "
     "  FROM idea i "
     "  LEFT JOIN app_user u ON u.id=i.author_id "
-    "  WHERE i.status='published' AND ("
-    "    i.visibility='public' OR i.author_id=%s "
-    "    OR (i.visibility='friends' AND ("
-    "      EXISTS (SELECT 1 FROM friend f1 "
-    "              WHERE f1.user_id=i.author_id AND f1.friend_id=%s) "
-    "      OR EXISTS (SELECT 1 FROM friend f2 "
-    "                 WHERE f2.user_id=%s AND f2.friend_id=i.author_id)"
-    "    ))"
-    "  )"
+    "  WHERE i.status='published' AND i.visibility='public'"
     ") t "
     "WHERE t.rn=1 "
     "ORDER BY t.like_count DESC, t.category"
 )
 
 
-def featured_by_category(viewer_id):
-    """领域头条：每个分类点赞数最高、已发布且对 viewer 可见的一条 idea。
+def featured_by_category(viewer_id=None):
+    """领域头条：每个分类点赞最高、已发布且公开的一条 idea。
 
-    可见性过滤与 list_ideas 完全一致（public 全部可见、friends 仅作者或好友、
-    private 仅作者），只取 status='published'；窗口函数按分类分区取 rn=1。
-    分类白名单与中文名在 Python 侧处理，避免 SQL 硬编码分类值产生耦合。
+    viewer_id 仅为兼容旧调用保留，不参与查询；公开口径硬编码在 SQL。
+    分类可自定义，中文名仅作显示回退，不再做白名单过滤。
     """
     with connect() as conn:
         with conn.cursor() as cur:
-            cur.execute(_FEATURED_SQL, (viewer_id, viewer_id, viewer_id))
+            cur.execute(_FEATURED_SQL)
             rows = cur.fetchall()
 
     items = []
     for row in rows:
         item = _serialize(row)
         cat = item.get("category")
-        # 忽略 NULL / 空串 / 不在白名单的分类
-        if cat is None or str(cat).strip() == "" or cat not in CATEGORY_LABELS:
+        if cat is None or str(cat).strip() == "":
             continue
-        # 未知分类回退为原始值（正常路径下 cat 已在白名单内）
         item["category_label"] = CATEGORY_LABELS.get(cat, cat)
         items.append(item)
-    # SQL 已按 like_count DESC, category 排序；上面的过滤仅剔除元素、保持相对顺序
     return items
+
+
+# ---------- 自定义标签字典 ----------
+
+def _slug(name):
+    return str(name).strip().lower().replace(" ", "_")[:60]
+
+
+def sync_idea_tags(conn, idea_id, raw_tags):
+    """双写：把 idea.tags 逗号串同步进 tag_dict + idea_tag（幂等）。"""
+    names = [t.strip() for t in str(raw_tags or "").split(",") if t.strip()][:8]
+    if not names:
+        return
+    with conn.cursor() as cur:
+        for name in names:
+            cur.execute(
+                "INSERT INTO tag_dict (name, slug) VALUES (%s, %s) "
+                "ON DUPLICATE KEY UPDATE name=VALUES(name)",
+                (name[:60], _slug(name)),
+            )
+            cur.execute("SELECT id FROM tag_dict WHERE slug=%s", (_slug(name),))
+            row = cur.fetchone()
+            if row:
+                cur.execute(
+                    "INSERT IGNORE INTO idea_tag (idea_id, tag_id) VALUES (%s, %s)",
+                    (idea_id, row["id"]),
+                )
+
+
+def list_tags(q=None, limit=100):
+    """标签字典：支持关键词搜索、置顶优先、按公开使用数排序。"""
+    clean = "".join(ch for ch in str(q or "").strip() if ch not in ("%", "_"))[:60]
+    kw = ("%" + clean + "%") if clean else None
+    with connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT d.id, d.name, d.slug, d.pinned, d.status, d.created_at, "
+                "(SELECT COUNT(*) FROM idea_tag t "
+                " JOIN idea i ON i.id=t.idea_id "
+                " WHERE t.tag_id=d.id AND i.status='published' AND i.visibility='public') AS use_count "
+                "FROM tag_dict d "
+                "WHERE (%s IS NULL OR d.name LIKE %s) "
+                "ORDER BY d.pinned DESC, use_count DESC, d.created_at DESC LIMIT %s",
+                (kw, kw, int(limit)),
+            )
+            return [_serialize(r) for r in cur.fetchall()]
 
 
 def update_idea(idea_id, author_id, data):
@@ -260,6 +307,9 @@ def update_idea(idea_id, author_id, data):
             for sql, value in pending:
                 cur.execute(sql, (value, idea_id, author_id))
                 hit = hit or cur.rowcount > 0
+            if hit and "tags" in data:
+                cur.execute("DELETE FROM idea_tag WHERE idea_id=%s", (idea_id,))
+                sync_idea_tags(conn, idea_id, data["tags"])
             if hit:
                 conn.commit()
             else:

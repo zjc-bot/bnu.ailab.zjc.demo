@@ -1,157 +1,189 @@
-"""研究成果数据访问层（独立模块，纯增量，不改动 db.py / app.py）。
+"""学习分享室（archive）公开数据访问层。
 
 设计原则：
-  1. 不 import db，按 db.py 的 _config() 思路自行实现配置读取；
-  2. 关键凭据缺失时直接返回 []，不尝试连接、不抛异常；
-  3. 连接/查询失败时仅记 warning 并返回 []，由调用方回退静态数据；
-  4. 只执行只读 SELECT，不写任何数据。
+  1. 与 ideas/store.py 一致：import db; db.connect()，复用同一份 DB_* 配置，
+     消除自实现 _config() 带来的配置漂移与误连风险；
+  2. 公开口径硬编码在 SQL（status='published' AND visibility='public'），
+     不带 viewer_id，从结构上杜绝 friends/private 泄漏；
+  3. 所有 SQL 都是静态常量字符串：过滤值为硬编码枚举常量、无外部输入，
+     因此没有任何字符串拼接 / f-string，天然免疫注入；
+  4. 只执行只读 SELECT，不写任何数据；
+  5. 任何异常（表不存在 / 权限不足 / 连接失败 / 映射异常）一律记 warning
+     并返回 static 空结构，绝不把异常抛给请求。
 """
 
 import logging
-import os
+from collections import Counter
 
-import pymysql
-from pymysql.cursors import DictCursor
+import db  # 与注册系统共用同一份 DB_* 配置与连接工厂
 
 log = logging.getLogger(__name__)
 
-# 只读查询：固定列 + 稳定排序，避免 SELECT * 带来的字段耦合。
-_SELECT_SQL = """
-    SELECT id, category, kind, title, year, status, summary, tags,
-           owner, metric, metric_label, method, finding, impact,
-           geom_x, geom_y, geom_w, geom_h, geom_r, geom_z
-    FROM research_achievement
-    ORDER BY sort_order, id
-"""
+# 8 种纸片形态：按序号（index）轮换，覆盖全部 8 种视觉。
+_KINDS = ("poster", "sheet", "ticket", "card", "photo", "note", "journal", "blueprint")
 
-# 状态 -> 前端角标：已发表不显示角标，进行中 / 已结项分别显示 doing / done。
-_STATUS_TO_ST = {
-    "已发表": "",
-    "进行中": "doing",
-    "已结项": "done",
-}
+# 8 组几何常量 (x, y, w, h, r, z)，与前端 paint 依赖的初始摆位一致。
+_GEOMETRY = (
+    (210, 78, 266, 212, -2, 3),
+    (470, 58, 288, 200, 1.2, 2),
+    (738, 92, 326, 132, -3, 5),
+    (1008, 218, 202, 116, -7, 6),
+    (232, 330, 238, 198, 3, 4),
+    (500, 292, 232, 192, -4, 7),
+    (752, 322, 252, 198, 2, 8),
+    (988, 386, 196, 206, 5, 9),
+)
+
+# 公开纸片：硬编码公开过滤 + 稳定排序 + 限量，无 viewer_id、无外部值。
+_ITEMS_SQL = (
+    "SELECT i.id, i.title, i.content, i.category, i.tags, "
+    "i.like_count, i.favorite_count, i.comment_count, i.created_at "
+    "FROM idea i WHERE i.status='published' AND i.visibility='public' "
+    "ORDER BY i.id DESC LIMIT 24"
+)
+
+# 标签聚合数据源：同一公开范围内的 idea.tags 逗号串（不 LIMIT，覆盖全部）。
+_TAGS_SQL = (
+    "SELECT i.tags FROM idea i "
+    "WHERE i.status='published' AND i.visibility='public'"
+)
+
+# stats 五项：全部由 SQL 实时计算，过滤值为硬编码常量。
+_STATS_SQL = (
+    ("已参加人数", "SELECT COUNT(*) AS v FROM app_user WHERE status='active'"),
+    ("平台内发布的总 idea 数", "SELECT COUNT(*) AS v FROM idea WHERE status='published'"),
+    ("累计点赞", "SELECT COALESCE(SUM(like_count),0) AS v FROM idea WHERE status='published'"),
+    ("累计收藏", "SELECT COALESCE(SUM(favorite_count),0) AS v FROM idea WHERE status='published'"),
+    ("讨论数", "SELECT COUNT(*) AS v FROM idea_comment"),
+)
 
 
-def _config():
-    """按 db.py 的思路自行实现，避免 import db 造成耦合。"""
-    return dict(
-        host=os.environ.get("DB_HOST", "127.0.0.1"),
-        port=int(os.environ.get("DB_PORT", "3306")),
-        user=os.environ.get("DB_USER", ""),
-        password=os.environ.get("DB_PASSWORD", ""),
-        database=os.environ.get("DB_NAME", "school"),
-        charset="utf8mb4",
-        cursorclass=DictCursor,
-        autocommit=True,  # 只读查询，无需事务
-        connect_timeout=5,
-        read_timeout=10,
-        write_timeout=10,
-    )
+def _empty_payload():
+    """DB 不可用时的兜底：空 items + 五项 0 + 仅「全部」标签。"""
+    return {
+        "items": [],
+        "stats": [{"label": label, "value": 0} for label, _ in _STATS_SQL],
+        "tags": [{"id": "all", "label": "全部"}],
+        "source": "static",
+    }
 
 
 def _tags(raw):
-    """逗号分隔字符串 -> 去空白后的标签列表。"""
+    """逗号分隔字符串 -> 去空白、去空项的标签列表。"""
     if not raw:
         return []
     return [part.strip() for part in raw.split(",") if part.strip()]
 
 
-def _num(value):
-    """可选几何字段：NULL 统一回退为 0，保证前端拿到数字。"""
-    return 0 if value is None else value
+def _year(created_at):
+    """created_at -> 4 位年份字符串；兼容 datetime / date / 字符串 / None。"""
+    if created_at is None:
+        return ""
+    if hasattr(created_at, "year"):
+        return str(created_at.year)
+    return str(created_at)[:4]
 
 
-def _to_item(row):
-    """数据库行 -> 前端一致结构。"""
-    status = row.get("status") or ""
+def _summary(content):
+    """正文截断 120 字，只返回摘要，绝不返回全文。"""
+    if not content:
+        return ""
+    return str(content)[:120]
+
+
+def _code(idea_id):
+    """I- 前缀 + 2 位补零编号（MySQL LPAD(id,2,'0') 的 Python 侧实现）。"""
+    return "I-" + str(idea_id).zfill(2)
+
+
+def _geometry(index):
+    """按 index % 8 取几何；超过 8 条时抬高 z，避免整组纸片堆在同一层。"""
+    x, y, w, h, r, z = _GEOMETRY[index % len(_GEOMETRY)]
+    if index >= len(_GEOMETRY):
+        z += (index // len(_GEOMETRY)) * 10
+    return x, y, w, h, r, z
+
+
+def _to_item(row, index):
+    """idea 行 -> 学习分享室纸片结构（owner 统一脱敏为「社区成员」）。"""
+    x, y, w, h, r, z = _geometry(index)
+    like_count = row.get("like_count") or 0
     return {
         "id": row.get("id"),
-        # 前端 code 与数据库主键同源（形如 P-01），DB 未单设 code 列。
-        "code": row.get("id"),
+        "code": _code(row.get("id")),
         "cat": row.get("category"),
-        "kind": row.get("kind"),
+        "kind": _KINDS[index % len(_KINDS)],
         "title": row.get("title"),
-        "year": row.get("year"),
-        "status": status,
-        "st": _STATUS_TO_ST.get(status, ""),
-        "summary": row.get("summary"),
+        "year": _year(row.get("created_at")),
+        "summary": _summary(row.get("content")),
         "tags": _tags(row.get("tags")),
-        "owner": row.get("owner"),
-        "metric": row.get("metric"),
-        "metricLabel": row.get("metric_label"),
-        "method": row.get("method"),
-        "finding": row.get("finding"),
-        "impact": row.get("impact"),
-        # 前端部分纸片所需的装饰字段；DB 未设对应列时给安全空值，
-        # 避免 archive.js 中 (p.rows || []) / p.red / p.refs 渲染异常。
+        "owner": "社区成员",
+        "metric": str(like_count),
+        "metricLabel": "赞",
+        "method": "",
+        "finding": "",
+        "impact": "",
+        "status": "已发布",
+        "st": "",
         "rows": [],
         "red": "",
         "refs": "",
-        "x": _num(row.get("geom_x")),
-        "y": _num(row.get("geom_y")),
-        "w": _num(row.get("geom_w")),
-        "h": _num(row.get("geom_h")),
-        "r": _num(row.get("geom_r")),
-        "z": _num(row.get("geom_z")),
+        "x": x,
+        "y": y,
+        "w": w,
+        "h": h,
+        "r": r,
+        "z": z,
     }
 
 
-def load_achievements():
-    """返回与前端一致结构的 list[dict]；DB 不可用时返回 []（由调用方回退静态数据）。"""
-    # 关键凭据缺失：不连接、不抛异常，直接降级。
-    if not (os.environ.get("DB_USER") or "").strip():
-        return []
-    if not (os.environ.get("DB_PASSWORD") or "").strip():
-        return []
+def _build_tags(rows):
+    """聚合公开范围内的 idea.tags：次数 DESC、名称 ASC，取前 9 + 「全部」= ≤10。"""
+    counter = Counter()
+    for row in rows:
+        counter.update(_tags(row.get("tags")))
+    ordered = sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))
+    tags = [{"id": "all", "label": "全部"}]
+    for name, _count in ordered[:9]:
+        # id 用标签名本身，前端按 id 过滤 cat/tags。
+        tags.append({"id": name, "label": name})
+    return tags[:10]
 
-    conn = None
+
+def load_public_ideas():
+    """返回契约中的完整 dict：items / stats / tags / source。
+
+    DB 异常时降级为 static 空结构（source='static'、items=[]、stats 全 0、
+    tags 仅「全部」），不抛异常给请求。
+    """
     try:
-        conn = pymysql.connect(**_config())
-        with conn.cursor() as cur:
-            cur.execute(_SELECT_SQL)
-            return [_to_item(row) for row in cur.fetchall()]
+        with db.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(_ITEMS_SQL)
+                rows = cur.fetchall()
+                items = [_to_item(row, idx) for idx, row in enumerate(rows)]
+
+                cur.execute(_TAGS_SQL)
+                tags = _build_tags(cur.fetchall())
+
+                stats = []
+                for label, sql in _STATS_SQL:
+                    cur.execute(sql)
+                    stat_row = cur.fetchone() or {}
+                    value = stat_row.get("v") or 0
+                    stats.append({"label": label, "value": int(value)})
+
+        return {
+            "items": items,
+            "stats": stats,
+            "tags": tags,
+            "source": "mysql",
+        }
     except Exception as exc:
-        # DB 未启动、账号无权限、表不存在等情况一律降级，绝不影响请求。
-        log.warning("研究成果数据读取失败，回退静态数据: %s", exc)
-        return []
-    finally:
-        if conn is not None:
-            try:
-                conn.close()
-            except Exception:
-                pass
+        log.warning("学习分享室公开数据读取失败，回退 static 空结构: %s", exc)
+        return _empty_payload()
 
 
-# ------------------------------------------------------------------
-# 填数据示例（仅注释，不执行）。填好后去掉行首 "# " 即可手工导入：
-#
-# INSERT INTO research_achievement
-#   (id, category, kind, title, year, status, summary, tags, owner,
-#    metric, metric_label, method, finding, impact,
-#    geom_x, geom_y, geom_w, geom_h, geom_r, geom_z, sort_order)
-# VALUES
-#   ('P-01', 'ai', 'poster', '多模态大模型评测基准', '2025', '已发表',
-#    '构建跨模态一致性评测集', '多模态,评测', '张三', '92.5', '综合准确率',
-#    '人工标注 + 自动校验', '跨模态对齐仍是主要短板', '已被三家团队采用',
-#    120, 80, 220, 160, -6, 3, 1);
-#
-# INSERT INTO research_achievement
-#   (id, category, kind, title, year, status, summary, tags, owner,
-#    metric, metric_label, method, finding, impact,
-#    geom_x, geom_y, geom_w, geom_h, geom_r, geom_z, sort_order)
-# VALUES
-#   ('P-02', 'bio', 'sheet', '蛋白质结构预测数据集', '2024', '进行中',
-#    '覆盖罕见折叠类型的数据集', '生物信息,数据集', '李四', '1800', '样本数',
-#    '同源建模与实验验证结合', '罕见折叠覆盖度不足', '补充了公开数据空白',
-#    380, 140, 200, 150, 4, 2, 2);
-#
-# INSERT INTO research_achievement
-#   (id, category, kind, title, year, status, summary, tags, owner,
-#    metric, metric_label, method, finding, impact,
-#    geom_x, geom_y, geom_w, geom_h, geom_r, geom_z, sort_order)
-# VALUES
-#   ('P-03', 'energy', 'blueprint', '固态电解质界面模型', '2023', '已结项',
-#    '界面离子输运的可解释模型', '能源材料,模拟', '王五', '3.2', '倍率提升',
-#    '分子动力学 + 阻抗谱拟合', '界面阻抗主导衰减', '指导了下一代配方设计',
-#    640, 90, 240, 170, 8, 1, 3);
-# ------------------------------------------------------------------
+def load_achievements():
+    """兼容别名：旧调用方只需要纸片列表，等价于 load_public_ideas()['items']。"""
+    return load_public_ideas()["items"]
