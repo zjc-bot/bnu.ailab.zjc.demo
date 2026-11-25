@@ -1,0 +1,55 @@
+/* 想法广场 · 沿用 BNU AI Lab 学术纸感设计语言 */
+.page-head.idea-head p:last-of-type { max-width: 62ch; }
+.idea-head .btn { margin-top: 6px; }
+
+.idea-filters {
+  display: grid; grid-template-columns: 1fr 1.4fr 1fr; gap: 14px;
+  margin: 22px 0; padding: 16px; background: var(--surface-subtle);
+  border: 1px solid var(--line); border-radius: 10px;
+}
+.idea-filters select, .idea-filters input { font: inherit; font-size: 14px; }
+
+.idea-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.idea-card {
+  display: block; text-align: left; padding: 18px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: 10px; color: var(--text);
+  transition: border-color .18s, transform .18s;
+}
+.idea-card:hover { border-color: var(--primary); transform: translateY(-2px); }
+.idea-card h3 { margin: 0 0 6px; font-size: 17px; line-height: 1.35; letter-spacing: -.01em; }
+.idea-card .idea-excerpt { margin: 0; font-size: 13px; line-height: 1.6; color: var(--muted); }
+.idea-card .idea-meta { margin-top: 12px; }
+.idea-card .idea-stat { float: right; font-size: 12px; color: var(--primary); }
+
+.idea-meta { font-size: 11.5px; color: var(--faint); font-family: ui-monospace, monospace; }
+.idea-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.idea-tags .tag { font-size: 11px; padding: 2px 8px; border: 1px dashed var(--line-strong); border-radius: 4px; color: var(--muted); }
+.idea-empty, .idea-more { padding: 28px; text-align: center; color: var(--muted); }
+
+.idea-detail-card { padding: 26px 28px; }
+.idea-detail-title { font-size: 28px; line-height: 1.25; margin: 0 0 8px; letter-spacing: -.02em; }
+.idea-body { margin: 18px 0; font-size: 15px; line-height: 1.8; white-space: pre-wrap; }
+.ai-panel { margin: 18px 0; padding: 14px 16px; background: var(--surface-subtle); border-left: 3px solid var(--accent); border-radius: 4px; }
+.ai-panel h3 { margin: 0 0 6px; font-size: 13px; color: var(--accent); }
+.ai-panel p { margin: 0; font-size: 13.5px; line-height: 1.6; }
+.idea-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line-subtle); }
+.idea-counts { font-size: 12px; color: var(--muted); }
+.idea-owner-actions { margin-left: auto; }
+
+.idea-comments { margin-top: 30px; }
+.idea-comments h2 { font-size: 18px; }
+.idea-comment-form { margin: 14px 0; }
+.comment { padding: 14px 0; border-top: 1px solid var(--line-subtle); }
+.comment p { margin: 4px 0; font-size: 14px; line-height: 1.6; }
+
+.idea-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.idea-form-actions { display: flex; gap: 10px; margin-top: 8px; }
+.err { min-height: 20px; color: var(--danger); font-size: 13px; }
+.toast { position: fixed; right: 20px; bottom: 20px; padding: 12px 18px; background: var(--text); color: var(--on-primary); border-radius: 8px; font-size: 13px; z-index: 50; }
+
+@media (max-width: 760px) {
+  .idea-grid { grid-template-columns: 1fr; }
+  .idea-filters, .idea-form-row { grid-template-columns: 1fr; }
+  .idea-detail-card { padding: 18px; }
+  .idea-detail-title { font-size: 23px; }
+}

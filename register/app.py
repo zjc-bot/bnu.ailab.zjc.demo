@@ -39,7 +39,8 @@ import captcha
 import db
 import mailer
 import secret_box
-from archive_api import archive_bp  # 新增：研究成果只读 API（无凭据时自动降级）
+from archive_api import archive_bp
+from ideas import ideas_bp  # 新增：idea 社区蓝图
 from games import init_games, socketio
 
 app = Flask(__name__)
@@ -1720,6 +1721,9 @@ def change_password():
 
 # 注册研究成果只读 API 蓝图（新增，纯增量）。
 app.register_blueprint(archive_bp)
+
+# 注册 idea 社区蓝图（新增，纯增量）。
+app.register_blueprint(ideas_bp)
 
 # 绑定 Socket.IO（好友对战通道）。gunicorn 入口 app:app 不受影响。
 init_games(app)

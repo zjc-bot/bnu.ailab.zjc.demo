@@ -32,6 +32,13 @@
 - **复用现有认证与路由，不新增数据库表、不改 schema、不动认证机制**。
 - **状态：2026-11-25 已增量部署上线**：先在服务器备份代码（`/root/bnu-register-backups/20261125T050137Z/code.tar.gz`），再 SFTP 上传 6 个新文件、在服务器 app.py 精确插入 9 行（未覆盖含并行改动的本地 app.py），`py_compile` 通过后 `systemctl restart bnu-register`。核验：`/` 302→`/register`、`/archive` 200、`/api/archive.json` 200、`/register`/`/login` 200，错误日志无异常；仅一条预期 warning——应用账号 `studentapp` 无权读 `research_achievement` 表（表尚未建），API 已按设计回退 `source:static`。
 
+### 1.2 2026-11-25 新增：项目主线转向 idea 社区 + 五子棋生产下线
+
+- **主线转向**：hi 于 2026-11-25 拍板，以「idea 社区」为项目新主线——成员发布想法、收藏/点赞/评论讨论、AI 分类/摘要/去重、点作者加好友私聊协作、成果展示；好友 IM 与小鲸 AI 作为底层能力继续保留。统一以 `idea` 为内容对象，复用现有认证、好友、AI 能力，不新建独立系统。完整方案见工作区 `idea-community-architecture.md`；架构决策以 `PROJECT_CHARTER.md` §12 ADR 为准。
+- **Phase 1 已部署（2026-11-25）**：新增 5 张表脚本 `schema_idea.sql`（idea / idea_favorite / idea_like / idea_comment / idea_ai_job）、`register/ideas/` 包（routes / store；ai_tasks 属 Phase 3 暂未建）、想法广场前端（3 模板 + `idea.css?v=1` / `idea.js?v=1`）。本地验证：编译通过、Jinja2 模板通过、mock 路由 10/10 通过、现有 pytest 102 passed 无回归、安全扫描无 SQL 拼接与敏感信息。服务器备份（`/root/bnu-register-backups/20261125T060615Z/code.tar.gz`）后增量上传 9 个文件、app.py 接入蓝图、导航改造，`py_compile` 通过、服务 active；未登录访问 `/ideas` 302、`/api/ideas` 401 符合预期。**数据库表尚未创建**（需 MySQL 凭据授权，见 §13），因此登录后列表为空、发布会失败——这是待办，不是 bug。
+- **五子棋生产已下线（2026-11-25）**：hi 判定五子棋"没啥用"，**只在服务器下线**——先备份代码（`/root/bnu-register-backups/20261125T055948Z/code.tar.gz`，含 `games-disabled/` 归档），再在服务器 app.py 的 `games_page` 插入 `abort(410)`、注释 `init_games(app)`，导航去掉对战入口；**不物理删除 `/opt/bnu-register/games/`**，代码完整保留在本地仓库，可随时恢复。核验：`/games` 登录后 410、未登录 302；其他路由正常。**不要删除本地 `games/` 代码。**
+- **口径说明**：本文及总纲中涉及五子棋"已部署/在用"的历史描述，以 `PROJECT_CHARTER.md` §12 的 2026-11-25「五子棋生产下线」ADR 为准；idea 相关代码位于 `register/ideas/` 与 `register/schema_idea.sql`。
+
 ---
 
 ## 2. 当前真实开放问题（按优先级）
@@ -100,6 +107,7 @@
 11. **改架构先改 `PROJECT_CHARTER.md`**，记录决策再动代码。
 12. **删除前先备份、先列表、先确认**，移到回收站，不永久删除。
 13. **成果展示页数据与 UI 集中在 `templates/archive.html` + `static/archive.*`**：当前为前端静态示例数据，换真实研究资料只需改模板内的数据数组（不动后端 / DB）；改这些静态文件时记得递增模板里的 `?v=N`。
+14. **idea 相关代码集中在 `register/ideas/` 与 `register/schema_idea.sql`**（Phase 1 新增、未部署）：新功能照此归位，不要散落到 `app.py` 或 `static/` 根。**五子棋不要删除本地 `games/` 代码**——用户明确要求代码保留在本地仓库、可随时恢复；生产下线只禁用服务器入口，不物理删除目录。
 
 ---
 

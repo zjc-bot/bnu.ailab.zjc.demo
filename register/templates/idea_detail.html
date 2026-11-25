@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}?v=1">
+<meta name="csrf" content="{{ csrf }}">
+<title>{{ idea.title }} · BNU AI Lab</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=11">
+<link rel="stylesheet" href="{{ url_for('static', filename='idea.css') }}?v=1">
+</head>
+<body><a class="skip-link" href="#main">跳到主要内容</a>
+
+<header class="topbar">
+  <div class="topbar-left">
+    <div class="mark">B</div>
+    <div>
+      <h1>BNU AI Lab</h1>
+      <p class="sub">想法详情</p>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <nav class="admin-nav" aria-label="主导航">
+      <a href="{{ url_for('home') }}">消息</a>
+      <a href="{{ url_for('ideas.ideas_plaza') }}" class="on">想法</a>
+      <a href="{{ url_for('archive') }}">成果</a>
+      <a href="{{ url_for('profile') }}">账号</a>
+    </nav>
+    <form method="post" action="{{ url_for('logout') }}">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="btn ghost sm2" type="submit">退出</button>
+    </form>
+  </div>
+</header>
+
+<main class="wrap-mid" id="main" data-idea-id="{{ idea.id }}">
+  <p class="eyebrow"><a href="{{ url_for('ideas.ideas_plaza') }}">想法广场</a> / {{ idea.category or '未分类' }}</p>
+  <article class="idea-detail-card card">
+    <h1 class="idea-detail-title">{{ idea.title }}</h1>
+    <p class="idea-meta">由 {{ idea.author_nickname or idea.author_id }} 发布 · {{ idea.created_at }}</p>
+    <div class="idea-tags">
+      {% for t in (idea.tags or '').split(',') if t.strip() %}<span class="tag">{{ t.strip() }}</span>{% endfor %}
+    </div>
+    <div class="idea-body">{{ idea.content }}</div>
+
+    {% if idea.ai_summary %}
+    <section class="ai-panel">
+      <h3>AI 速览</h3>
+      <p>{{ idea.ai_summary }}</p>
+      {% if idea.ai_category %}<p class="idea-meta">AI 分类：{{ idea.ai_category }}</p>{% endif %}
+    </section>
+    {% endif %}
+
+    <div class="idea-actions">
+      <button class="btn ghost" id="btnFav" type="button" aria-pressed="{{ 'true' if favorited else 'false' }}">{{ '★ 已收藏' if favorited else '☆ 收藏' }}</button>
+      <button class="btn ghost" id="btnLike" type="button" aria-pressed="{{ 'true' if liked else 'false' }}">{{ '♥ 已赞' if liked else '♡ 赞' }}</button>
+      <span class="idea-counts"><span id="favCount">{{ idea.favorite_count }}</span> 收藏 · <span id="likeCount">{{ idea.like_count }}</span> 赞</span>
+      {% if can_edit %}
+      <span class="idea-owner-actions">
+        <button class="btn danger sm2" id="btnDelete" type="button">删除</button>
+      </span>
+      {% endif %}
+    </div>
+  </article>
+
+  <section class="idea-comments">
+    <h2>讨论 <span class="idea-meta">{{ comments|length }}</span></h2>
+    <form id="commentForm" class="idea-comment-form">
+      <label class="field"><span>写下你的看法</span><textarea id="commentInput" rows="3" maxlength="2000" required></textarea></label>
+      <button class="btn primary" type="submit">发表评论</button>
+    </form>
+    <div id="commentList" class="comment-list">
+      {% for c in comments %}
+      <div class="comment"><p class="idea-meta">{{ c.author_nickname or c.user_id }} · {{ c.created_at }}</p><p>{{ c.content }}</p></div>
+      {% else %}
+      <p class="idea-meta">还没有评论，来写下第一条。</p>
+      {% endfor %}
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast" role="status" hidden></div>
+<script src="{{ url_for('static', filename='idea.js') }}?v=1"></script>
+</body>
+</html>
