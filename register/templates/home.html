@@ -21,8 +21,8 @@
   <div class="topbar-right">
     <nav class="admin-nav" aria-label="主导航">
       <a href="{{ url_for('home') }}" class="on" aria-current="page">消息</a>
-      <a href="{{ url_for('ideas.ideas_plaza') }}">想法</a>
-      <a href="{{ url_for('archive') }}">成果</a>
+      <a href="{{ url_for('ideas.ideas_plaza') }}">idea</a>
+      <a href="{{ url_for('archive') }}">学习分享室</a>
       <a href="{{ url_for('profile') }}">账号</a>
     </nav>
     <form method="post" action="{{ url_for('logout') }}">

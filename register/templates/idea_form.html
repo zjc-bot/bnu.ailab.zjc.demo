@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}?v=1">
 <meta name="csrf" content="{{ csrf }}">
-<title>{{ '编辑想法' if idea else '发布想法' }} · BNU AI Lab</title>
+<title>{{ '编辑 idea' if idea else '发布 idea' }} · BNU AI Lab</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=11">
-<link rel="stylesheet" href="{{ url_for('static', filename='idea.css') }}?v=1">
+<link rel="stylesheet" href="{{ url_for('static', filename='idea.css') }}?v=2">
 </head>
 <body><a class="skip-link" href="#main">跳到主要内容</a>
 
@@ -15,14 +15,14 @@
     <div class="mark">B</div>
     <div>
       <h1>BNU AI Lab</h1>
-      <p class="sub">{{ '编辑想法' if idea else '发布想法' }}</p>
+      <p class="sub">{{ '编辑 idea' if idea else '发布 idea' }}</p>
     </div>
   </div>
   <div class="topbar-right">
     <nav class="admin-nav" aria-label="主导航">
       <a href="{{ url_for('home') }}">消息</a>
-      <a href="{{ url_for('ideas.ideas_plaza') }}" class="on">想法</a>
-      <a href="{{ url_for('archive') }}">成果</a>
+      <a href="{{ url_for('ideas.ideas_plaza') }}" class="on">idea</a>
+      <a href="{{ url_for('archive') }}">学习分享室</a>
       <a href="{{ url_for('profile') }}">账号</a>
     </nav>
     <form method="post" action="{{ url_for('logout') }}">
@@ -35,17 +35,17 @@
 <main class="wrap-mid" id="main">
   <div class="page-head">
     <p class="eyebrow">Share your idea</p>
-    <h1>{{ '编辑想法' if idea else '发布一条想法' }}</h1>
+    <h1>{{ '编辑 idea' if idea else '发布一个 idea' }}</h1>
     <p>一个念头、一个待验证的方向、一个想找人合作的问题，都可以。</p>
   </div>
 
   <div class="card">
     <form id="ideaForm" data-idea-id="{{ idea.id if idea else '' }}">
-      <label class="field"><span>标题 <i class="req">*</i></span><input id="iTitle" type="text" maxlength="200" required value="{{ idea.title if idea else '' }}" placeholder="一句话说清你的想法"></label>
+      <label class="field"><span>标题 <i class="req">*</i></span><input id="iTitle" type="text" maxlength="200" required value="{{ idea.title if idea else '' }}" placeholder="一句话说清你的 idea"></label>
       <label class="field"><span>正文 <i class="req">*</i></span><textarea id="iContent" rows="10" maxlength="20000" required placeholder="背景、做法、想找谁一起做……">{{ idea.content if idea else '' }}</textarea></label>
       <div class="idea-form-row">
         <label class="field"><span>分类</span><select id="iCategory"><option value="">未分类</option>{% for c in categories %}<option value="{{ c }}" {% if idea and idea.category == c %}selected{% endif %}>{{ c }}</option>{% endfor %}</select></label>
-        <label class="field"><span>可见范围</span><select id="iVisibility">{% for v in visibilities %}<option value="{{ v }}" {% if idea and idea.visibility == v %}selected{% elif not idea and v == 'friends' %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
+        <label class="field"><span>可见范围</span><select id="iVisibility">{% for v in visibilities %}<option value="{{ v }}" {% if idea and idea.visibility == v %}selected{% elif not idea and v == 'public' %}selected{% endif %}>{% if v == 'public' %}公开（进入头条与学习分享室）{% elif v == 'friends' %}仅好友{% elif v == 'private' %}仅自己{% else %}{{ v }}{% endif %}</option>{% endfor %}</select></label>
       </div>
       <label class="field"><span>标签（逗号分隔，最多 8 个）</span><input id="iTags" type="text" maxlength="255" value="{{ idea.tags if idea else '' }}" placeholder="例如：小样本, 跨模态, 可解释性"></label>
       <div class="err" id="formErr" role="alert"></div>
@@ -58,6 +58,6 @@
 </main>
 
 <div class="toast" id="toast" role="status" hidden></div>
-<script src="{{ url_for('static', filename='idea.js') }}?v=1"></script>
+<script src="{{ url_for('static', filename='idea.js') }}?v=2"></script>
 </body>
 </html>

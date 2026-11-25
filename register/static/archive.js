@@ -7,14 +7,8 @@ function escapeHtml(v) {
 var E = escapeHtml;
 
 
-const CATS = [
-  { id: "all", label: "全部" },
-  { id: "ai", label: "人工智能" },
-  { id: "edu", label: "教育技术" },
-  { id: "bio", label: "生物信息" },
-  { id: "energy", label: "可持续能源" },
-  { id: "mat", label: "材料与传感" },
-];
+// 分类导航由 /api/archive.json 下发，后端硬保证 <=10（含「全部」）。
+let CATS = [{ id: "all", label: "全部" }];
 
 const BASE = [
   { id:"p01", code:"P-01", cat:"ai", kind:"poster", x:210, y:78, w:266, h:212, r:-2, z:3,
@@ -75,19 +69,19 @@ const DETAILS = {
   b08: { method:"对低功耗传感节点外壳做层叠结构设计，标注关键公差、热管理走线与装配顺序，并试制原型验证。", finding:"优化后的结构在保持散热裕量的同时降低 23.7% 能耗，装配步骤由 11 步压缩到 7 步。", impact:"剖面图作为量产交接依据，缩短原型到小批量试制的周期。" },
 };
 
-const STATS = [
-  { x:210, y:594, r:-1.5, b:"128", s:"成果档案总数" },
-  { x:340, y:598, r:1.2, b:"37", s:"近三年同行评议发表" },
-  { x:470, y:592, r:-0.8, b:"14", s:"合作机构" },
-  { x:600, y:597, r:1.6, b:"1,284", s:"累计引用" },
-  { x:730, y:593, r:-1.2, b:"9", s:"在研项目" },
+// 统计贴纸由 API 实时下发；坐标仅为排版常量。
+let STATS = [];
+const STAT_POS = [
+  { x:210, y:594, r:-1.5 }, { x:340, y:598, r:1.2 },
+  { x:470, y:592, r:-0.8 }, { x:600, y:597, r:1.6 },
+  { x:730, y:593, r:-1.2 },
 ];
 
 const hit = document.getElementById("hit");
 const stage = document.getElementById("stage");
 const nav = document.getElementById("nav");
 const countEl = document.getElementById("count");
-let pieces = BASE.map(p => ({ ...p }));
+let pieces = [];
 let cursor = 0;
 let activeCat = "all";
 let lastWheel = 0;
@@ -96,7 +90,7 @@ function pad(n) { return String(n).padStart(2, "0"); }
 function maxZ() { return Math.max(...pieces.map(p => p.z)); }
 function face(p) {
   const tags = (p.tags || []).map(t => `<span class="tag">${E(t)}</span>`).join("");
-  const status = `<span class="status ${p.st}"><i></i>${E(p.status)}</span>`;
+  const status = `<span class="status ${E(p.st)}"><i></i>${E(p.status)}</span>`;
   const head = `<div class="idtag">${E(p.code)}</div><div class="year">${E(p.year)}</div>`;
   switch (p.kind) {
     case "poster":
@@ -160,13 +154,16 @@ function face(p) {
 function build() {
   hit.innerHTML = pieces.map((p, i) =>
     `<article class="piece" data-i="${i}" tabindex="0" aria-label="${E(p.title)}"><div class="piece-sheet">${face(p)}</div></article>`
-  ).join("") + STATS.map(s =>
-    `<div class="stat" style="transform:translate(${s.x}px,${s.y}px) rotate(${s.r}deg)"><b>${s.b}</b><span>${s.s}</span></div>`
-  ).join("") + `<div class="stat-note">数字随档案更新 · 截至 2026.11</div>`;
+  ).join("") + (pieces.length ? STATS.slice(0, 5).map((s, i) => {
+    const g = STAT_POS[i % STAT_POS.length];
+    return `<div class="stat" style="transform:translate(${g.x}px,${g.y}px) rotate(${g.r}deg)"><b>${E(s.value)}</b><span>${E(s.label)}</span></div>`;
+  }).join("") : "") + (pieces.length
+    ? `<div class="stat-note">数据实时统计 · 来自平台公开分享</div>`
+    : `<div class="archive-empty">暂无公开分享的 idea，来发布第一个吧</div>`);
 
   hit.querySelectorAll(".piece").forEach(el => bindPiece(el));
-  nav.innerHTML = CATS.map(c =>
-    `<button data-cat="${c.id}" class="${c.id === activeCat ? "active" : ""}"><span class="slot">${c.id === activeCat ? '<i class="dot"></i>' : ""}</span>${c.label}</button>`
+  nav.innerHTML = CATS.slice(0, 10).map(c =>
+    `<button data-cat="${E(c.id)}" class="${c.id === activeCat ? "active" : ""}"><span class="slot">${c.id === activeCat ? '<i class="dot"></i>' : ""}</span>${E(c.label)}</button>`
   ).join("");
   nav.querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
     activeCat = b.dataset.cat;
@@ -188,9 +185,9 @@ function paint() {
     el.style.zIndex = p.z;
     el.style.transform = `translate(${p.x}px, ${p.y}px) rotate(${p.r}deg)`;
     el.classList.toggle("is-active", i === cursor);
-    el.classList.toggle("is-dim", activeCat !== "all" && p.cat !== activeCat);
+    el.classList.toggle("is-dim", activeCat !== "all" && p.cat !== activeCat && !(p.tags || []).includes(activeCat));
   });
-  countEl.textContent = `${pad(cursor + 1)} / ${pad(pieces.length)}`;
+  countEl.textContent = pieces.length ? `${pad(Math.min(cursor + 1, pieces.length))} / ${pad(pieces.length)}` : `00 / 00`;
 }
 
 function bindPiece(el) {
@@ -225,6 +222,7 @@ function bindPiece(el) {
 }
 
 function step(dir) {
+  if (!pieces.length) return;
   cursor = (cursor + dir + pieces.length) % pieces.length;
   pieces[cursor].z = maxZ() + 1;
   paint();
@@ -240,10 +238,30 @@ function shuffle() {
   paint();
 }
 
-function reset() {
-  pieces = BASE.map(p => ({ ...p }));
+// 统一的数据应用函数（全局作用域，供 API 加载与复位共用）。
+let lastPayload = null;
+function applyData(d) {
+  if (!d) return;
+  lastPayload = d;
+  pieces = Array.isArray(d.items) ? d.items : [];
+  STATS = Array.isArray(d.stats) ? d.stats : [];
+  CATS = pieces.length
+    ? (Array.isArray(d.tags) && d.tags.length ? d.tags : [{ id: "all", label: "全部" }]).slice(0, 10)
+    : [{ id: "all", label: "全部" }];
   cursor = 0;
-  paint();
+  activeCat = "all";
+  build();
+}
+
+// 复位：清空位置改动后重新应用真实数据，绝不回退写死示例。
+function reset() {
+  var payload = lastPayload || window.__ARCHIVE__;
+  if (payload) {
+    applyData(payload);
+  } else {
+    pieces = []; STATS = []; CATS = [{ id: "all", label: "全部" }];
+    cursor = 0; build();
+  }
 }
 
 function scale() {
@@ -279,51 +297,54 @@ const KIND_LABEL = { poster:"海报", sheet:"实验记录", ticket:"会议门票
 let detailIndex = -1;
 
 function openDetail(i) {
+  if (!pieces.length || !pieces[i]) return;
   detailIndex = i;
   const p = pieces[i];
   const d = DETAILS[String(p.id || "").toLowerCase()] || {};
-  const method = E(p.method || d.method || "详情数据待补充。");
+  const method = E(p.method || d.method || p.summary || "详情数据待补充。");
   const finding = E(p.finding || d.finding || "详情数据待补充。");
   const impact = E(p.impact || d.impact || "详情数据待补充。");
   sheet.innerHTML = `
     <button class="close" id="dClose" aria-label="关闭">×</button>
-    <div class="d-head"><span class="d-code">${E(p.code)}</span><span class="d-kind">${KIND_LABEL[p.kind] || p.kind}</span><span class="d-year">${E(p.year)}</span></div>
+    <div class="d-head"><span class="d-code">${E(p.code)}</span><span class="d-kind">${E(KIND_LABEL[p.kind] || p.kind)}</span><span class="d-year">${E(p.year)}</span></div>
     <h2 id="dTitle">${E(p.title)}</h2>
     <div class="d-metric-row"><span class="d-metric">${E(p.metric)}</span><span class="d-metric-label">${E(p.metricLabel)}</span></div>
     <p class="d-summary">${E(p.summary)}</p>
     <div class="d-section"><h3>研究方法</h3><p>${method}</p></div>
     <div class="d-section"><h3>主要发现</h3><p>${finding}</p></div>
     <div class="d-section"><h3>研究意义</h3><p>${impact}</p></div>
-    <div class="d-tags">${p.tags.map(t => `<span class="tag">${t}</span>`).join("")}</div>
+    <div class="d-tags">${(p.tags || []).map(t => `<span class="tag">${E(t)}</span>`).join("")}</div>
     <div class="d-foot"><span class="d-owner">${E(p.owner)} · ${E(p.status)}</span>
       <span class="d-nav"><button id="dPrev">← 上一项</button><button id="dNext">下一项 →</button></span>
     </div>
-    <div class="d-source">数据源：本地档案（可切换为 MySQL）</div>`;
+    <div class="d-source">数据源：平台公开分享</div>`;
   overlay.classList.add("open");
   document.getElementById("dClose").onclick = closeDetail;
-  document.getElementById("dPrev").onclick = () => openDetail((detailIndex - 1 + pieces.length) % pieces.length);
-  document.getElementById("dNext").onclick = () => openDetail((detailIndex + 1) % pieces.length);
+  document.getElementById("dPrev").onclick = () => openDetail(pieces.length ? (detailIndex - 1 + pieces.length) % pieces.length : 0);
+  document.getElementById("dNext").onclick = () => openDetail(pieces.length ? (detailIndex + 1) % pieces.length : 0);
 }
 function closeDetail() { overlay.classList.remove("open"); detailIndex = -1; }
 overlay.addEventListener("click", e => { if (e.target === overlay) closeDetail(); });
 window.addEventListener("keydown", e => {
   if (e.key === "Escape" && detailIndex >= 0) closeDetail();
-  if (detailIndex >= 0 && e.key === "ArrowRight") openDetail((detailIndex + 1) % pieces.length);
-  if (detailIndex >= 0 && e.key === "ArrowLeft") openDetail((detailIndex - 1 + pieces.length) % pieces.length);
+  if (detailIndex >= 0 && e.key === "ArrowRight") openDetail(pieces.length ? (detailIndex + 1) % pieces.length : 0);
+  if (detailIndex >= 0 && e.key === "ArrowLeft") openDetail(pieces.length ? (detailIndex - 1 + pieces.length) % pieces.length : 0);
 });
 
-// 数据源：优先 MySQL（由 /api/archive.json 提供），无凭据/未建表时自动保留静态示例。
+// 数据源：/api/archive.json 为唯一事实来源；空数据显示空态，绝不回退假示例。
 (function () {
   var api = (document.currentScript && document.currentScript.getAttribute("data-archive-api")) || window.ARCHIVE_API;
-  if (!api) return;
+  // 本地离线验证时可注入 window.__ARCHIVE__；生产无此变量时正常走 API。
+  if (window.__ARCHIVE__) { applyData(window.__ARCHIVE__); return; }
+  if (!api) { build(); return; }
   fetch(api).then(function (r) { return r.json(); }).then(function (d) {
-    if (d && d.source === "mysql" && Array.isArray(d.items) && d.items.length) {
-      pieces = d.items;
-      cursor = 0;
-      build();
-    }
-  }).catch(function () { /* 静态数据继续生效 */ });
+    applyData(d);
+  }).catch(function () {
+    pieces = []; STATS = []; CATS = [{ id: "all", label: "全部" }];
+    build();
+  });
 })();
+
 
 build();
 fit();

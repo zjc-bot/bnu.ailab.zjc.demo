@@ -44,7 +44,23 @@
 - **五子棋生产已下线（2026-11-25）**：hi 判定五子棋"没啥用"，**只在服务器下线**——先备份代码（`/root/bnu-register-backups/20261125T055948Z/code.tar.gz`，含 `games-disabled/` 归档），再在服务器 app.py 的 `games_page` 插入 `abort(410)`、注释 `init_games(app)`，导航去掉对战入口；**不物理删除 `/opt/bnu-register/games/`**，代码完整保留在本地仓库，可随时恢复。核验：`/games` 登录后 410、未登录 302；其他路由正常。**不要删除本地 `games/` 代码。**
 - **口径说明**：本文及总纲中涉及五子棋"已部署/在用"的历史描述，以 `PROJECT_CHARTER.md` §12 的 2026-11-25「五子棋生产下线」ADR 为准；idea 相关代码位于 `register/ideas/` 与 `register/schema_idea.sql`。
 
+### 1.3 2026-11-25 Phase 2：数据同步、标签体系与命名调整
+
+- **三项需求**：① 学习分享室（`/archive`）成果与领域头条同步、数据一致；② 标签可自定义、关键词搜索可管理、公开页导航标签 ≤10；③ 「研究档案室」→「学习分享室」（Learning Studio）、「想法广场」→「idea 广场」、「研究成果展示」→「公开分享的 idea」等命名与文案调整，补激励主标语「一个 idea 能创造世界」。另需解决公开内容可见范围矛盾（发布默认 `friends` 导致公开位看不到内容）。
+- **架构决策（核心）**：`idea` 表为唯一事实来源；`/api/archive.json`（学习分享室 / 公开分享墙）与 `/api/ideas/featured`（领域头条）共用同一条硬过滤 `status='published' AND visibility='public'`，**不带 viewer_id**；`friends/private/draft` 只留在登录态社区内部；**不做双表同步**，`research_achievement` 表暂留作历史兜底、不删。理由：此前 archive 读 `research_achievement`（无数据回退写死 8 条示例）、头条读 `idea`，双数据源必然不同步；且发布默认 `friends` 导致公开位看不到内容。统一口径同时解决"不同步"与"可见范围矛盾"，并从结构上杜绝 private 泄漏。配套：发布默认可见性改 `public`；公开 API 字段白名单（禁 real_name / student_no / email / author_id / 正文全文 / content_hash / ai_*）；缓存 TTL 60s→30s 并支持写操作失效；`stats` 五项改为 SQL 实时计算（已参加人数、平台内发布的总 idea 数、累计点赞、累计收藏、讨论数）。详见 `PROJECT_CHARTER.md` §12 的 2026-11-25 ADR。
+- **接口契约**：工作区 `api-contract.md`（约定 `/api/archive.json`、`/api/ideas/featured`、`/api/tags`、`/api/ideas`、`POST /api/ideas` 的请求/响应与公开字段白名单）；设计方案见工作区 `idea-sync-tags-rename-plan.md`。标签字典归 `register/schema_tags.sql` + `tag_dict` / `idea_tag` 两张表（详见总纲 §7.4）。
+- **分工（T1–T6）**：T1 数据层统一（`archive_data.py` 改读 idea + 复用 `db.connect()`、`schema_idea.sql` 默认 public、新增 `schema_tags.sql`）；T2 标签与搜索（`ideas/store.py`、`ideas/routes.py`：字典下发、参数化 LIKE、≤10 导航、双写标签）；T3 头条口径（`featured_by_category` 去 viewer 参数、改 public-only，与 T2 同文件由主代理串行处理）；T4 前端与文案（`archive.js`、`idea.css/js`、模板改名与激励文案、静态版本号 bump）；T5 文档与 ADR（本文档、README、总纲）；T6 验证与部署（pytest、可见性矩阵、同步一致性、≤10 断言、XSS、截图、增量部署）。
+- **验收项 V1–V15 摘要**：V1 发布 public idea 后 archive 与头条的标题/分类/标签 diff=0；V2 private/friends/draft 连续 ≥2 个 TTL 不出现在公开响应；V3 public ≤60s 必达且 `source='mysql'`；V4 撤回及时；V5 字段脱敏；V6 导航标签 ≤10（含「全部」）；V7 自定义标签可发布/可搜/进导航；V8 仅存在于标题或正文的关键词能命中且分页 total 一致；V9 0 条 public 时显示空态、不回退 8 条示例；V10 8 种纸片无空白；V11 自定义标签 XSS 转义；V12 运行时 grep「研究档案室」=0、静态版本号已 bump；V13 pytest 105+ 全绿、错误日志 0；V14 `stats` 五项与库查询逐项相等、0 条时全为 0；V15 主标语出现在 idea 广场与学习分享室头部。
+- **状态：Phase 2 进行中，代码已提交、待部署验收**（T6 部署与验收由主代理稍后执行；本条不记录"已部署/已测试通过"结论）。
+
 ---
+
+### 1.4 2026-11-25 Phase 2 收尾修复（账号页对战栏 / Socket.IO 残留）
+
+- **账号页仍有「对战」**：`templates/profile.html` 的导航与「新手引导」里的整块「对战 · 五子棋」说明未随生产下线一起清理，用户点进账号页仍能看到。已删除该导航项与说明块，账号页导航统一为「消息 / idea / 学习分享室 / 账号」；常见问题里的「邀请没反应」也改为消息口径。核验：`/me` 页面 grep「对战 / 五子棋 / games_page」= 0。
+- **Socket.IO 持续报错**：早前对服务器 `init_games(app)` 的注释被后续部署覆盖还原，旧标签页轮询 `/socket.io/` 触发 gunicorn WebSocket 升级失败、错误栈刷屏。改为**环境变量开关**：`GAMES_ENABLED=1` 或 pytest 环境才挂载 `init_games(app)`，生产 `.env` 未设该变量故默认关闭；`before_request` 对 `/socket.io/` 明确返回 410。游戏代码完整保留，本地 `pytest` 105 passed 无回归。核验：`/socket.io/` → 410，重启后日志无 traceback。
+- **命名与文案**：主标语「一个 idea 能创造世界」；全站「研究档案室」→「学习分享室」(Learning Studio)、「想法」→「idea」、导航「成果」→「学习分享室」；静态版本号 bump 至 `archive.css?v=2` / `archive.js?v=3` / `idea.css?v=2` / `idea.js?v=2`。
+- **前端 bug 修复**：`reset()` 曾回退写死 `BASE` 假数据（改为重新应用真实数据快照）、空态下 `step()` 的 `% 0` 与「01 / 00」计数、以及 4 处 XSS 转义缺口（详情 tags / nav data-cat / status class / d-kind）。`applyData()` 提升为全局函数，供 API 加载与复位共用。
 
 ## 2. 当前真实开放问题（按优先级）
 
@@ -113,6 +129,7 @@
 12. **删除前先备份、先列表、先确认**，移到回收站，不永久删除。
 13. **成果展示页数据与 UI 集中在 `templates/archive.html` + `static/archive.*`**：当前为前端静态示例数据，换真实研究资料只需改模板内的数据数组（不动后端 / DB）；改这些静态文件时记得递增模板里的 `?v=N`。
 14. **idea 相关代码集中在 `register/ideas/` 与 `register/schema_idea.sql`**（Phase 1 新增、未部署）：新功能照此归位，不要散落到 `app.py` 或 `static/` 根。**五子棋不要删除本地 `games/` 代码**——用户明确要求代码保留在本地仓库、可随时恢复；生产下线只禁用服务器入口，不物理删除目录。
+15. **标签字典归 `register/schema_tags.sql` + `tag_dict` / `idea_tag` 两张表**（Phase 2）：分类不再硬编码 6 个，改字典驱动；关键词搜索用后端参数化 LIKE 覆盖 `title/content/tag.name`。**公开口径任何改动必须同时检查「领域头条」与「学习分享室 / 公开分享墙」两侧，禁止重新引入双数据源**——两者必须共用 `idea` 表 `published+public` 的同一硬过滤（不带 `viewer_id`）；`friends/private/draft` 只留在登录态社区内部。公开 API 一律走字段白名单，禁止重新回退写死的示例数据。
 
 ---
 

@@ -1,8 +1,9 @@
-/* 想法广场 · 沿用 BNU AI Lab 学术纸感设计语言 */
+/* idea 广场 · 沿用 BNU AI Lab 学术纸感设计语言 */
 .page-head.idea-head p:last-of-type { max-width: 62ch; }
+.idea-head h1 { font-size: 32px; letter-spacing: -.03em; line-height: 1.2; color: var(--primary); }
 .idea-head .btn { margin-top: 6px; }
 
-/* 领域头条：每个领域点赞最高的一条 */
+/* 领域头条：每个领域点赞最高的一个 idea */
 .featured { margin: 8px 0 26px; padding: 20px 22px 22px; background: var(--surface-subtle); border: 1px solid var(--line); border-radius: 12px; }
 .featured-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
 .featured-head h2 { margin: 4px 0 0; font-size: 19px; letter-spacing: -.02em; }

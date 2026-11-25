@@ -20,7 +20,8 @@
   <div class="topbar-right">
     <nav class="admin-nav" aria-label="主导航">
       <a href="{{ url_for('home') }}">消息</a>
-      <a href="{{ url_for('games_page') }}">对战</a>
+      <a href="{{ url_for('ideas.ideas_plaza') }}">idea</a>
+      <a href="{{ url_for('archive') }}">学习分享室</a>
       <a href="{{ url_for('profile') }}" class="on" aria-current="page">账号</a>
     </nav>
     <form method="post" action="{{ url_for('logout') }}">
@@ -242,19 +243,7 @@
       </div>
     </details>
 
-    <details class="guide">
-      <summary>对战 · 五子棋</summary>
-      <div class="guide-body">
-        <ol>
-          <li>点顶部导航「对战」进入。</li>
-          <li>必须是<b>好友</b>才能对战。在左侧好友列表点「邀请」。</li>
-          <li>邀请会保存 1 小时；好友上线后在「对战」页的待处理邀请里接受或拒绝，不必同时在线。</li>
-          <li>也可以点「和小鲸练习」选难度，与服务端 AI 直接开一局。</li>
-          <li>双方进入同一房间后轮流落子，先连成五子者胜。</li>
-          <li>棋盘由服务端校验，不能作弊；对局结束自动记入「最近战绩」。</li>
-        </ol>
-      </div>
-    </details>
+
 
     <details class="guide">
       <summary>头像与账号</summary>
@@ -273,7 +262,7 @@
       <div class="guide-body">
         <ul>
           <li><b>找不到某个同学？</b> 对方要用完备的学号注册并通过邮箱验证，且你们都要是正常状态。</li>
-          <li><b>邀请没反应？</b> 确认好友也在「对战」页；当前用长轮询通信，延迟约 1–2 秒。</li>
+          <li><b>消息没反应？</b> 刷新页面重试；当前用轮询通信，延迟约 1–2 秒。</li>
           <li><b>图片传不上去？</b> 检查格式与体积（≤8MB、宽和高都≥80px），或换一张图重试。</li>
           <li><b>忘记密码？</b> 登录页点「忘记密码」，通过校内邮箱重设。</li>
         </ul>

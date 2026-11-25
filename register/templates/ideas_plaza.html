@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}?v=1">
 <meta name="csrf" content="{{ csrf }}">
-<title>想法广场 · BNU AI Lab</title>
+<title>idea 广场 · BNU AI Lab</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=11">
-<link rel="stylesheet" href="{{ url_for('static', filename='idea.css') }}?v=1">
+<link rel="stylesheet" href="{{ url_for('static', filename='idea.css') }}?v=2">
 </head>
 <body><a class="skip-link" href="#main">跳到主要内容</a>
 
@@ -15,14 +15,14 @@
     <div class="mark">B</div>
     <div>
       <h1>BNU AI Lab</h1>
-      <p class="sub">想法广场</p>
+      <p class="sub">idea 广场</p>
     </div>
   </div>
   <div class="topbar-right">
     <nav class="admin-nav" aria-label="主导航">
       <a href="{{ url_for('home') }}">消息</a>
-      <a href="{{ url_for('ideas.ideas_plaza') }}" class="on" aria-current="page">想法</a>
-      <a href="{{ url_for('archive') }}">成果</a>
+      <a href="{{ url_for('ideas.ideas_plaza') }}" class="on" aria-current="page">idea</a>
+      <a href="{{ url_for('archive') }}">学习分享室</a>
       <a href="{{ url_for('profile') }}">账号</a>
     </nav>
     <form method="post" action="{{ url_for('logout') }}">
@@ -34,17 +34,17 @@
 
 <main class="wrap-wide" id="main">
   <div class="page-head idea-head">
-    <p class="eyebrow">Idea plaza · 想法广场</p>
-    <h1>把想法摊开，让别人接住</h1>
-    <p>发布你的研究念头，收藏值得跟进的想法，和志趣相投的人一起把它做出来。</p>
-    <a class="btn primary" href="{{ url_for('ideas.idea_new') }}">＋ 发布想法</a>
+    <p class="eyebrow">Idea plaza · idea 广场</p>
+    <h1>一个 idea 能创造世界</h1>
+    <p>把 idea 摊开，让别人接住——每个作品都始于一个还没说出口的念头。</p>
+    <a class="btn primary" href="{{ url_for('ideas.idea_new') }}">＋ 发布 idea</a>
   </div>
 
   <section class="featured" id="featured" hidden aria-labelledby="featuredTitle">
     <div class="featured-head">
       <div>
         <p class="eyebrow">Editor's picks · 领域头条</p>
-        <h2 id="featuredTitle">每个领域，最受欢迎的那条想法</h2>
+        <h2 id="featuredTitle">每个领域，最受欢迎的那个 idea</h2>
       </div>
       <p class="featured-note">按点赞数自动选出，随社区投票实时更新</p>
     </div>
@@ -56,11 +56,10 @@
       <span>分类</span>
       <select id="fCategory">
         <option value="">全部</option>
-        {% for c in categories %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
       </select>
     </label>
     <label class="field" style="margin:0">
-      <span>关键词</span>
+      <span>关键词（支持标题、正文、标签搜索）</span>
       <input id="fTag" type="text" maxlength="30" placeholder="标签或关键词">
     </label>
     <label class="field" style="margin:0">
@@ -73,11 +72,11 @@
   </div>
 
   <div id="ideaList" class="idea-grid" aria-live="polite"></div>
-  <div id="ideaEmpty" class="idea-empty" hidden>还没有符合条件的想法，来发布第一条吧。</div>
+  <div id="ideaEmpty" class="idea-empty" hidden>还没有符合条件的 idea，来发布第一个吧。</div>
   <div id="ideaMore" class="idea-more" hidden><button class="btn ghost" id="btnMore" type="button">加载更多</button></div>
 </main>
 
 <div class="toast" id="toast" role="status" hidden></div>
-<script src="{{ url_for('static', filename='idea.js') }}?v=1"></script>
+<script src="{{ url_for('static', filename='idea.js') }}?v=2"></script>
 </body>
 </html>

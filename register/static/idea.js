@@ -1,4 +1,4 @@
-// 想法广场 / 详情 / 发布 —— 原生 JS，沿用现有 CSRF 头约定。
+// idea 广场 / 详情 / 发布 —— 原生 JS，沿用现有 CSRF 头约定。
 (function () {
   var csrf = document.querySelector('meta[name="csrf"]');
   var CSRF = csrf ? csrf.content : '';
@@ -75,6 +75,7 @@
       // 本地离线验证时可注入 window.__IDEAS__，生产无此变量时正常走 API。
       if (window.__IDEAS__) return render(window.__IDEAS__, reset);
       var q = '?category=' + encodeURIComponent(fCategory.value) +
+        '&q=' + encodeURIComponent(fTag.value.trim()) +
         '&tag=' + encodeURIComponent(fTag.value.trim()) + '&page=' + page + '&size=20';
       req('/api/ideas' + q).then(function (d) { render(d, reset); }).catch(function (e) { toast(e.message); });
     }
@@ -93,6 +94,14 @@
     fCategory.onchange = function () { load(true); };
     fTag.onkeydown = function (e) { if (e.key === 'Enter') load(true); };
     document.getElementById('btnMore').onclick = function () { page++; load(false); };
+    // 分类由标签字典下发，支持用户自定义，不再硬编码 6 项。
+    req('/api/tags').then(function (d) {
+      (d.items || []).forEach(function (t) {
+        var opt = document.createElement('option');
+        opt.value = t.name; opt.textContent = t.name;
+        fCategory.appendChild(opt);
+      });
+    }).catch(function () {});
     load(true);
   }
 
@@ -141,7 +150,7 @@
 
     var btnDelete = document.getElementById('btnDelete');
     if (btnDelete) btnDelete.onclick = function () {
-      if (!confirm('确定删除这条想法？此操作不可恢复。')) return;
+      if (!confirm('确定删除这个 idea？此操作不可恢复。')) return;
       req('/api/ideas/' + id, { method: 'DELETE' }).then(function () {
         toast('已删除'); setTimeout(function () { location.href = '/ideas'; }, 500);
       }).catch(function (e) { toast(e.message); });

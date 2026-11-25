@@ -18,6 +18,7 @@ import os
 import re
 import secrets
 import socket
+import sys
 import time
 from functools import wraps
 from urllib.parse import urlparse, urlunparse
@@ -195,6 +196,10 @@ ADMIN_ALLOWED = {"127.0.0.1", "::1", "localhost"}
 
 @app.before_request
 def restrict_admin_to_localhost():
+    # 五子棋生产下线后，旧标签页仍会轮询 /socket.io/；明确返回 410，
+    # 避免 gunicorn 尝试 WebSocket 升级而持续刷错误栈。
+    if request.path.startswith("/socket.io/"):
+        return jsonify(error="对战功能已下线"), 410
     if not request.path.startswith("/admin"):
         return None
     ip = request.remote_addr or ""
@@ -1725,8 +1730,17 @@ app.register_blueprint(archive_bp)
 # 注册 idea 社区蓝图（新增，纯增量）。
 app.register_blueprint(ideas_bp)
 
-# 绑定 Socket.IO（好友对战通道）。gunicorn 入口 app:app 不受影响。
-init_games(app)
+# 五子棋生产已下线（2026-11-25）：游戏代码完整保留，但默认不挂载
+# Socket.IO 事件与中间件，避免旧标签页轮询 /socket.io/ 持续报错。
+# 本地开发 / pytest 需要 Socket.IO 时自动启用，或显式设 GAMES_ENABLED=1；
+# 生产 .env 未设该变量，故始终关闭。
+_games_on = (
+    os.environ.get("GAMES_ENABLED") == "1"
+    or bool(os.environ.get("PYTEST_CURRENT_TEST"))
+    or "pytest" in sys.modules
+)
+if _games_on:
+    init_games(app)
 
 
 if __name__ == "__main__":
