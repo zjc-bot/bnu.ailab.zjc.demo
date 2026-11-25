@@ -1,38 +1,18 @@
 """Idea 社区数据访问层（Phase 1）。
 
 设计约定：
-  - 不 import register/db.py，避免与注册系统数据层耦合；
-    _config()/connect() 与 db.py 风格一致：DB_* 环境变量、DictCursor、
+  - 直接复用 register/db.py 的 connect()，确保 DB_* 配置单一来源；
     参数化 %s、with 连接、显式 commit。
   - 所有 SQL 的值一律参数化；动态 SET 的列名取自硬编码白名单字典，
     扫描/分页条件用「%s IS NULL OR ...」写法，因此没有任何字符串拼接。
   - 计数（like/favorite/comment）在同一事务内按关系表 COUNT 重算，保证一致。
 """
 
-import os
-
-import pymysql
-from pymysql.cursors import DictCursor
-
-
-def _config():
-    return dict(
-        host=os.environ.get("DB_HOST", "127.0.0.1"),
-        port=int(os.environ.get("DB_PORT", "3306")),
-        user=os.environ.get("DB_USER", ""),
-        password=os.environ.get("DB_PASSWORD", ""),
-        database=os.environ.get("DB_NAME", "school"),
-        charset="utf8mb4",
-        cursorclass=DictCursor,
-        autocommit=False,
-        connect_timeout=5,
-        read_timeout=10,
-        write_timeout=10,
-    )
+import db  # 与注册系统共用同一份 DB_* 配置与连接工厂，避免配置漂移
 
 
 def connect():
-    return pymysql.connect(**_config())
+    return db.connect()
 
 
 # update_idea 允许写入的列：key 为外部字段名，value 为固定 SQL 语句。

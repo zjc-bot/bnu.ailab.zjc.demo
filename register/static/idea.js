@@ -49,9 +49,13 @@
     }
     function load(reset) {
       if (reset) page = 1;
+      // 本地离线验证时可注入 window.__IDEAS__，生产无此变量时正常走 API。
+      if (window.__IDEAS__) return render(window.__IDEAS__, reset);
       var q = '?category=' + encodeURIComponent(fCategory.value) +
         '&tag=' + encodeURIComponent(fTag.value.trim()) + '&page=' + page + '&size=20';
-      req('/api/ideas' + q).then(function (d) {
+      req('/api/ideas' + q).then(function (d) { render(d, reset); }).catch(function (e) { toast(e.message); });
+    }
+    function render(d, reset) {
         var items = d.items || []; total = d.total || 0;
         if (reset) list.innerHTML = '';
         items.forEach(function (i) { list.insertAdjacentHTML('beforeend', card(i)); });
@@ -62,7 +66,6 @@
             return Number(b.dataset.hot || 0) - Number(a.dataset.hot || 0);
           });
         }
-      }).catch(function (e) { toast(e.message); });
     }
     fCategory.onchange = function () { load(true); };
     fTag.onkeydown = function (e) { if (e.key === 'Enter') load(true); };

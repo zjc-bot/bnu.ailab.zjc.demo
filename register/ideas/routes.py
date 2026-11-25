@@ -192,6 +192,9 @@ def api_idea_create():
         payload = _validate(request.get_json(silent=True) or {})
     except ValueError as exc:
         return jsonify(error=str(exc)), 400
+    # 发布即公开：默认 published，否则列表只查 published 会看不到刚发布的想法。
+    # 显式传 draft 时仍可存草稿（前端表单当前不提供该选项）。
+    payload.setdefault("status", "published")
     idea_id = store.create_idea(session["uid"], payload)
     return jsonify(id=idea_id, idea=store.get_idea(idea_id)), 201
 

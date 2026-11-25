@@ -45,7 +45,8 @@
 .idea-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .idea-form-actions { display: flex; gap: 10px; margin-top: 8px; }
 .err { min-height: 20px; color: var(--danger); font-size: 13px; }
-.toast { position: fixed; right: 20px; bottom: 20px; padding: 12px 18px; background: var(--text); color: var(--on-primary); border-radius: 8px; font-size: 13px; z-index: 50; }
+.toast { position: fixed; right: 20px; bottom: 20px; max-width: min(320px, calc(100vw - 40px)); padding: 12px 18px; background: var(--text); color: var(--on-primary); border-radius: 8px; font-size: 13px; line-height: 1.5; z-index: 50; }
+.toast[hidden] { display: none; }
 
 @media (max-width: 760px) {
   .idea-grid { grid-template-columns: 1fr; }
