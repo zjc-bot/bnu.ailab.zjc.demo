@@ -30,7 +30,7 @@
 - 新增静态资源 `static/archive.css?v=1`、`static/archive.js?v=2` 与模板 `templates/archive.html`；点击卡片可展开详情（研究方法/发现/意义三段）。`archive.js` 经安全审查修复了 HTML 转义（XSS）、字段兜底与 DB 正文优先读取，版本递增为 2。
 - **MySQL 数据层（新增，纯增量）**：`archive_api.py` 提供只读 `GET /api/archive.json`（已在 app.py 注册蓝图）；`archive_data.py` 从环境变量 `DB_*` 读 `research_achievement` 表，**凭据缺失或查询失败时返回空数组**，前端自动保留静态示例数据；`schema_archive.sql` 为幂等建表脚本（`CREATE TABLE IF NOT EXISTS`，不影响现有表）。当前未配置凭据 → API 返回 `source:static`。
 - **复用现有认证与路由，不新增数据库表、不改 schema、不动认证机制**。
-- **状态：本地已实现，待部署**（尚未随服务器增量部署上线）。
+- **状态：2026-11-25 已增量部署上线**：先在服务器备份代码（`/root/bnu-register-backups/20261125T050137Z/code.tar.gz`），再 SFTP 上传 6 个新文件、在服务器 app.py 精确插入 9 行（未覆盖含并行改动的本地 app.py），`py_compile` 通过后 `systemctl restart bnu-register`。核验：`/` 302→`/register`、`/archive` 200、`/api/archive.json` 200、`/register`/`/login` 200，错误日志无异常；仅一条预期 warning——应用账号 `studentapp` 无权读 `research_achievement` 表（表尚未建），API 已按设计回退 `source:static`。
 
 ---
 
