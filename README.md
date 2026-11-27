@@ -1,9 +1,18 @@
 # D:/MySQL — 项目速查
 
-> 面向北师大 AI Lab 的 Flask Web 系统集合，部署于阿里云 ECS，MySQL 8.0 后端。
-> **项目主线为「idea 社区」**（发布 idea / 收藏讨论 / AI 辅助 / 好友协作 / 公开分享的 idea）；**五子棋已从生产下线，代码本地保留、可回滚**。
-> **架构与决策的唯一事实来源是 [`PROJECT_CHARTER.md`](PROJECT_CHARTER.md)**，本文只做导航、操作红线与上手，冲突时以总纲为准。
-> 最后核对：2026-11-27。**当前交付基线**：总纲升级内容已部署 ECS，本地 register 全量 **205 passed**，部署专项 **13 passed**，webapp 离线自测 **51 passed / 0 failed**。register 已按 9 个幂等迁移完成生产迁移、备份、切换与 53 项验收，webapp 已完成最小增量同步；两服务 `.env` 哈希未变、仍为单 worker 回环监听。真实浏览器视觉与完整登录态异常矩阵、CI、72h soak、恢复演练及公网开放仍未执行。
+面向北师大 AI Lab 的 Flask Web 系统集合，部署于阿里云 ECS，MySQL 8.0 后端。
+
+**项目主线为「idea 社区」**：发布 idea、收藏讨论、AI 辅助、好友协作与公开分享；**五子棋已从生产下线，代码本地保留、可回滚**。
+
+**架构与决策的唯一事实来源是 [`PROJECT_CHARTER.md`](PROJECT_CHARTER.md)**。本文只做导航、操作红线与上手，冲突时以总纲为准。
+
+**最后核对：2026-11-27。当前交付基线：**
+
+- 总纲升级、草稿箱与发布返回流程、学习分享室分类标识及 FE-01 静态资源版本统一均已部署 ECS。
+- 本地 register 全量 **226 passed**，部署专项 **18 passed**，webapp 离线自测 **51 passed / 0 failed**。
+- register 最近一次生产增量备份：`/root/bnu-register-backups/20261127T070407Z`；94 个源文件暂存/切换，生产 Python 3.10.12 编译、19 项自动验收与 17 项清单静态资源验收通过。
+- 两服务 `.env` 哈希未变，仍为单 worker 回环监听。
+- 真实浏览器视觉与完整登录态异常矩阵、CI、72h soak、恢复演练及公网开放仍未执行。
 
 ---
 
@@ -13,7 +22,7 @@
 
 **项目主线（2026-11-25 起）**：以「idea 社区」为核心——成员发布 idea、收藏/点赞/评论讨论，AI 辅助分类/摘要/去重，点作者加好友私聊协作，公开分享的 idea 在学习分享室（公开分享墙）对外展示；好友 IM 与小鲸 AI 作为底层能力保留。统一以 `idea` 为内容对象，复用现有认证、好友与 AI，不新建独立系统。**2026-11-26 历史生产版本**包含 Phase 1/2 与当日复审修复，已完成备份、迁移、上传、重启和基础验收。**2026-11-27 本轮升级**已在主树完成六类分类、昵称搜索、作者并发编辑、独立治理与审计、后台单条撤销/恢复、个人主页/收藏、互动/删号行锁、AI 派生物失效、验证码与 SSRF 加固、分享室交互修复、后台 2FA 邮箱确认与 Key 删除确认、空库 schema 顺序及精确迁移校验，并已部署 ECS。**五子棋已在生产下线**（代码本地保留，详见总纲 §12 ADR）。完整方案见工作区 `idea-community-architecture.md`。
 
-> **交付原则（2026-11-19）**：安全稳定是底线，同时完成总纲中已明确的核心功能——五子棋 AI 对战、离线邀请、新手引导已落地并完成服务器增量部署核验；后续游戏经 hi 拍板暂缓。不无边界扩张；先本地实现与回归验证，生产变更另行确认。
+**交付原则（2026-11-19）**：安全稳定是底线，同时完成总纲中已明确的核心功能——五子棋 AI 对战、离线邀请、新手引导已落地并完成服务器增量部署核验；后续游戏经 hi 拍板暂缓。不无边界扩张；先本地实现与回归验证，生产变更另行确认。
 
 业务域：
 
@@ -26,7 +35,7 @@
 
 **技术栈**：Python 3.13（本地 / CI）· **Python 3.10.12（生产 `/opt/bnu-register/venv`）** · Flask 3.0.3 · PyMySQL 1.1.1 · gunicorn 22.0.0（单 worker）· 阿里云 ECS · Socket.IO 4.8.1。
 
-> ⚠️ **本地/CI 与生产解释器版本不一致**：选依赖版本前必须核对生产的 `requires_python` 与 cp310 wheel 是否存在，否则会出现「CI 装得上、生产装不上」。例如 Pillow 13.0.0 要求 `>=3.11`，生产 3.10 无法安装，故 `register/requirements.txt` 固定为 `12.3.0`（3.10 可用的最高版）；详见 §4A。
+**注意：本地/CI 与生产解释器版本不一致。** 选依赖版本前必须核对生产的 `requires_python` 与 cp310 wheel 是否存在，否则会出现「CI 装得上、生产装不上」。例如 Pillow 13.0.0 要求 `>=3.11`，生产 3.10 无法安装，故 `register/requirements.txt` 固定为 `12.3.0`（3.10 可用的最高版）；详见 §4A。
 
 ### 当前安全姿态（重要 · 2026-11-27 更新）
 
@@ -94,6 +103,7 @@ D:/MySQL/
 ├── webapp/                 学生信息管理  → 详见 webapp/README.md
 ├── register/               注册与社区（演进主体）
 │   ├── app.py              路由入口
+│   ├── asset_versions.py   静态资源版本清单与 asset_url() 单一来源
 │   ├── db.py               数据访问层
 │   ├── admin.py            管理后台蓝图
 │   ├── schema*.sql         18 个基础/增量脚本（含幂等迁移）
@@ -102,12 +112,12 @@ D:/MySQL/
 │   ├── templates/          Jinja2 模板（home.html 等）
 │   │   ├── archive.html    学习分享室（公开分享墙）
 │   │   └── ideas_*.html    idea 广场、发布与详情
-│   ├── static/             JS/CSS；im.js 为当前 IM 入口
-│   │   ├── archive.css     公开分享墙样式（?v=4）
-│   │   ├── archive.js      公开分享墙脚本（?v=5）
-│   │   ├── idea.css        idea 页面样式（?v=5）
-│   │   ├── idea.js         idea 页面脚本（?v=4）
-│   │   └── content_profile.js 我的主页脚本（?v=3）
+│   ├── static/             JS/CSS；模板统一通过 asset_url() 生成带版本 URL
+│   │   ├── archive.css     公开分享墙样式
+│   │   ├── archive.js      公开分享墙脚本
+│   │   ├── idea.css        idea 页面样式
+│   │   ├── idea.js         idea 页面脚本
+│   │   └── content_profile.js 我的主页脚本
 │   ├── archive_api.py      公开只读 API 蓝图（GET /api/archive.json）
 │   ├── archive_data.py     公开数据层（读取 idea 的 published+public+active 子集）
 │   ├── ideas/              idea 社区路由、数据访问、分类常量与治理服务
@@ -130,7 +140,7 @@ D:/MySQL/
 └── 打开*.bat               SSH 隧道入口
 ```
 
-> `_ref/` 内的方案文档是**参考件，不是事实来源**；架构决策仍以 `PROJECT_CHARTER.md` 为准，方案落地状态以源码与 pytest 为准。
+`_ref/` 内的方案文档是**参考件，不是事实来源**；架构决策仍以 `PROJECT_CHARTER.md` 为准，方案落地状态以源码与 pytest 为准。
 
 **准入规则**：新功能进 `register/`；游戏代码只进 `register/games/`；禁止新建 `temp/`、`new/`、`copy/` 等无语义目录。详见总纲 §4。
 
@@ -140,7 +150,7 @@ D:/MySQL/
 
 ### 已完成
 
-> **五子棋说明（2026-11-25 决策，已执行）**：以下五子棋相关条目均为**历史交付记录**——五子棋已在生产下线，代码完整保留在本地仓库、可随时恢复，不物理删除 `games/` 目录。以总纲 §12 ADR 为准。
+**五子棋说明（2026-11-25 决策，已执行）**：以下五子棋相关条目均为**历史交付记录**——五子棋已在生产下线，代码完整保留在本地仓库、可随时恢复，不物理删除 `games/` 目录。以总纲 §12 ADR 为准。
 
 - **Phase 0 地基**（提交 `476e4a6`）：私钥备份移出到回收站、明文密码改环境变量、`SECRET_KEY` 缺失拒绝启动、schema 全部纳入部署、admin 白名单封堵 XFF 伪造、git 仓库初始化。
 - **AI 聊天记录导出**：`/api/chat/export?format=md|json`，小鲸会话头部有下载按钮，可导出全部对话。
@@ -165,24 +175,27 @@ D:/MySQL/
 - 基础 SQL 参数化、Jinja2 转义、CSRF、安全响应头已具备；**2026-11-27 本轮安全与功能升级已完成本地回归与生产部署验收**。真实浏览器、完整登录态异常路径、定时备份与恢复演练仍是残留风险，不能概括为“全部安全”。
 - **学习分享室与 idea 社区**：`GET /archive` 渲染 `archive.html`，`GET /api/archive.json` 提供公开只读数据；公开数据源统一为 `idea` 表 `published + public + active` 子集，并增加标签字典、关键词搜索和公开字段白名单。公开详情返回完整 `content`，卡片只展示 120 字 `summary`；占位“研究方法/发现/意义”已删除。
 - **安全、idea 与学习分享室修复（2026-11-26，历史生产交付）**：后台 2FA 改为服务端哈希挑战、5 分钟有效、单挑战最多 5 次错误、IP 限发、一次性消费、可撤销会话与换邮箱确认，改密同时撤销该管理员全部待验证挑战；idea 修复输入校验、标签字典、历史标签回填、公开统计、筛选竞态和分页；学习分享室修复完整正文投影与安全正文渲染。**历史测试结果：131 passed**；ECS 完成备份、6 个幂等迁移、代码上传、生产 Python 3.10 编译和重启后基础验收。
-- **总纲升级与 bug 修复（2026-11-27，已部署）**：固定 `ai/edu/bio/energy/math/other`，未知历史分类保留 `category_legacy` 后归 `other`；昵称搜索；作者编辑 `row_version` 乐观并发；独立 `moderation_state`、append-only `idea_moderation_log`、`request_id + 载荷指纹` 幂等；后台单条撤销/恢复与 `no-store`，撤销作者只读、非作者不可见、private 后台不展示标题/正文/标签，仅展示处置所需元数据；登录态 `/profile` 与 `?view=favorites`；点赞/收藏/评论/删号共享用户行锁，删号同事务清互动并重算计数；内容变化清空 AI 派生物；注册验证码与图形验证码资源加固；SSRF 边界与连接 pin；分享室键盘/焦点/错误/窄屏修复；后台 2FA 邮箱确认与账号 Key 删除确认；空库 schema 顺序与增量精确列/索引校验。**当前基线：全量 205 passed，部署专项 13 passed。**
+- **总纲升级与 bug 修复（2026-11-27，已部署）**：固定 `ai/edu/bio/energy/math/other`，未知历史分类保留 `category_legacy` 后归 `other`；昵称搜索；作者编辑 `row_version` 乐观并发；独立 `moderation_state`、append-only `idea_moderation_log`、`request_id + 载荷指纹` 幂等；后台单条撤销/恢复与 `no-store`，撤销作者只读、非作者不可见、private 后台不展示标题/正文/标签，仅展示处置所需元数据；登录态 `/profile` 与 `?view=favorites`；点赞/收藏/评论/删号共享用户行锁，删号同事务清互动并重算计数；内容变化清空 AI 派生物；注册验证码与图形验证码资源加固；SSRF 边界与连接 pin；分享室键盘/焦点/错误/窄屏修复；后台 2FA 邮箱确认与账号 Key 删除确认；空库 schema 顺序与增量精确列/索引校验。**生产交付时基线：全量 221 passed，部署专项 13 passed。**
+- **FE-01 静态资源版本统一（2026-11-27，已部署）**：新增 `register/asset_versions.py` 作为版本清单，模板统一使用 `asset_url()`，部署 HTTP 验收从同一清单生成；idea 广场不再引用旧版 `idea.js?v=4` / `idea.css?v=5`。新增回归确保模板无硬编码版本、引用资源均在清单中且部署断言一致；当前本地全量 **226 passed**、部署专项 **18 passed**，生产 17 项清单静态资源均返回 200。
 
 ### 当前交付 / 待验收（2026-11-27）
 
-1. **本轮功能已实现并部署**：§4「已完成」列出六类分类、昵称搜索、并发编辑、治理、个人主页、互动/删号一致性、验证码、SSRF、分享室与后台交互、空库/迁移校验；本地 register **205 passed**、部署专项 **13 passed**，生产最终验收 **53 项通过**。
-2. **生产迁移与回滚备份已完成**：9 个幂等迁移按依赖执行，并在隔离库重复演练；register 备份 `/root/bnu-register-backups/20261127T051731Z`，webapp 最终备份 `/root/student-web-backups/20261127T052741Z`。旧 register 版本保留在 `/opt/bnu-register-rollback-4497d88fdaef`。
+1. **本轮功能已实现并部署**：§4「已完成」列出六类分类、昵称搜索、并发编辑、治理、个人主页、互动/删号一致性、验证码、SSRF、分享室与后台交互、空库/迁移校验；生产交付时 register **221 passed**、部署专项 **13 passed**，生产最终验收 **53 项通过**。FE-01 已随后完成增量部署，当前本地与生产代码基线为 **226 passed / 18 passed**。
+2. **生产迁移与回滚备份已完成**：9 个幂等迁移按依赖执行，并在隔离库重复演练；FE-01 本轮 register 备份 `/root/bnu-register-backups/20261127T070407Z`，旧版本保留在 `/opt/bnu-register-rollback-533e716ed4a6`；上一轮 register 备份 `/root/bnu-register-backups/20261127T063118Z`，webapp 备份 `/root/student-web-backups/20261127T052741Z`。
 3. **真实浏览器与异常路径仍未做**：需补完整登录态可见性矩阵、真实邮件/2FA 异常路径及桌面/窄屏/键盘交互；本地 mock 浏览器仅完成结构、DOM 与交互冒烟。
 4. **交付门槛未完成**：CI、72h soak、备份恢复演练、HTTPS/公网开放均未执行；公网保持关闭。
 5. **webapp 安全补丁已同步生产**：XFF 覆盖、回环监听、写前熔断、无 `--force`、强制验收均已落实；生产 `nginx -t`、模板一致性、监听与 HTTP 响应验收通过。已有服务器继续禁止重跑初始化脚本。
 6. **Mochi starter 已定案**：按 2026-11-19 ADR 保持独立，仅作参考，不整合、不替换小鲸；不再是产品阻塞项。若未来改变定位，须新 ADR。
 7. **服务器 SSH 密钥轮换**：尚未执行，需 hi 拍板。
 8. **后续游戏暂缓**：中国象棋 / 国际象棋 / UNO 不扩张；五子棋生产下线、源码保留。AI 结构化任务、公开作者页、命名收藏夹与置顶内容仍后置。
+9. **草稿箱与发布返回流程（已部署）**：个人页“草稿”统计已作为草稿箱入口，支持继续编辑、发布、带版本删除和空态；发布页补“保存草稿”、未保存离开确认、失败保留与版本冲突提示。从个人页进入后取消回草稿箱，从广场进入取消回广场，已发布内容编辑取消回详情。register 全量 **221 passed**，隔离 HTTP 冒烟与生产增量验收通过；真实浏览器验收因连接器不可用尚未完成。学习分享室卡片已改为展示作者选择的分类，公开 API 的 `cat/catLabel` 字段与前端同步上线。详见总纲 §9D.13。
+10. **前端体验完善升级点（FE-01 已部署，其余待实施）**：已梳理静态资源版本、列表加载/错误态、个人页筛选与 URL 状态、IM/小鲸故障降级、弹窗焦点与读屏、账号页用户文案、archive 窄屏控件、操作上下文和全局导航/toast 一致性等 9 项；FE-01 已完成统一版本清单、模板 helper、部署断言、回归与生产验收，FE-02～FE-09 仍待实施，详见总纲 §9G。
 
 ### 4C. 2026-11-26 复审与修复状态（历史生产记录）
 
-> 本节保留 2026-11-26 实际发生的问题、修复和部署证据，不代表 2026-11-27 当前代码状态；后续状态以 §4D 为准。
+本节保留 2026-11-26 实际发生的问题、修复和部署证据，不代表 2026-11-27 当前代码状态；后续状态以 §4D 为准。
 
-> 2026-11-26 当日已连接 ECS/MySQL，完成备份、6 个幂等迁移、代码上传、生产编译和用户手动重启；**未提交或推送**。基础生产验收通过，但未完成真实浏览器、完整登录态可见性矩阵和 2FA 异常路径验收。
+2026-11-26 当日已连接 ECS/MySQL，完成备份、6 个幂等迁移、代码上传、生产编译和用户手动重启；**未提交或推送**。基础生产验收通过，但未完成真实浏览器、完整登录态可见性矩阵和 2FA 异常路径验收。
 
 | 等级 | 问题 | 状态 / 证据与影响 |
 |---|---|---|
@@ -193,7 +206,7 @@ D:/MySQL/
 | 高 | idea 广场筛选、搜索、排序与详情计数存在确定性功能错误 | **本地已修复**：分类改读 `/api/categories`，关键词与精确标签分离，服务端 hot/new 排序，请求序号防竞态、分页防重复，详情按 `data.idea` 更新计数 |
 | 中 | idea 输入校验与数据库结构不一致 | **本地已修复**：分类限制 30 字；创建/更新/评论拒绝非对象 JSON；标签类型、长度、数量与大小写重复均有校验 |
 | 中 | 标签字典尚未成为唯一读路径 | **2026-11-26 本地已修复并部署**：仅 active 标签进入关联、兼容串、搜索与公开导航；迁移幂等回填历史 `idea.tags`，不重启停用标签；删除 idea 清理关联；当日公开统计过滤 `published+public`，2026-11-27 再增加 `moderation_state='active'`，已部署 |
-| 中 | 学习分享室正文被截断并用空白字段拼占位详情 | **已修复并部署**：公开 API 同时返回卡片 `summary` 与完整 `content`；前端只渲染完整正文，保留换行并仅对 HTTP(S) 链接做安全 linkify；当日生产静态版本为 `archive.js?v=4` / `archive.css?v=3`，2026-11-27 当前本地版本已升至 `archive.js?v=5` / `archive.css?v=4` |
+| 中 | 学习分享室正文被截断并用空白字段拼占位详情 | **已修复并部署**：公开 API 同时返回卡片 `summary` 与完整 `content`；前端只渲染完整正文，保留换行并仅对 HTTP(S) 链接做安全 linkify；当日生产静态版本为 `archive.js?v=4` / `archive.css?v=3`，2026-11-27 当前生产版本已升至 `archive.js?v=6` / `archive.css?v=5` |
 | 中 | 学习分享室键盘、焦点与 API 故障处理不完整 | **2026-11-26 历史状态：未修复**；2026-11-27 已本地修复并通过回归，真实浏览器待验 |
 | 高 | 待归档游戏房间超过 24 小时后可能无日志丢失 | **既有问题，2026-11-26 当日未改、当前仍未改**：`register/games/manager.py:86-88` 的 `get_room()` 直接删除过期房间，绕过 `sweep()` 的完整棋谱错误日志；`claim_archive()` 也绕过了 `get_room()` 的过期检查。恢复游戏前应统一过期清理并补测试 |
 | 中 | 验证码资源与尝试次数限制可被规避/放大 | **2026-11-26 历史状态：未修复**；2026-11-27 已本地实现服务端邮箱/IP/challenge 限流、原子消费及图形验证码频率/容量/增量清理，待真实 MySQL 验收 |
@@ -206,7 +219,7 @@ D:/MySQL/
 
 | 事项 | 当前事实 | 下一步 |
 |---|---|---|
-| 代码与测试 | 主树本地实现；register 全量 **205 passed**，部署专项 **13 passed** | 保持单 worker；后续变更继续回归 |
+| 代码与测试 | 主树本地实现；FE-01 后当前 register 全量 **226 passed**，部署专项 **18 passed**；FE-01 已增量部署，生产代码基线与本地一致 | 保持单 worker；继续补真实浏览器刷新验收 |
 | 数据库 | 9 个幂等迁移已执行并通过列、索引、分类与精确表权限校验；隔离生产副本演练重复执行通过 | 继续验证并发、缓存与审计业务语义 |
 | 内容治理 | 独立 active/revoked、`row_version`、append-only 审计与请求幂等、单条后台撤销/恢复已部署；private 后台不展示标题/正文/标签，仅展示处置所需元数据 | 真实 MySQL 审计权限、并发、缓存、private 元数据最小化与浏览器验收 |
 | 个人内容 | `/profile` 双视图、`?view=favorites` 直达、`private, no-store`；互动与删号按用户行锁串行并重算计数，已部署 | 并发与完整可见性矩阵验收 |
@@ -218,7 +231,7 @@ D:/MySQL/
 
 - 项目按**对外产品**标准验收（稳定长跑、可恢复、可监控），不因当前规模小降级；质量门槛见总纲 §10.1。
 - 当前 HTTP 明文传输（靠 SSH 隧道加密）。公网化前必须上 HTTPS，不要录入真实个人信息。
-- CI 只做回归测试、静态检查和非阻断依赖审计，不部署。历史 run `44518300890` 曾总体 Success；**2026-11-27 当前本地 register 基线为 205 passed（部署专项 13 passed），webapp 离线自测 51 通过 / 0 失败；本轮未触发 CI、未做真实浏览器视觉验收与完整登录态异常路径验收**。2026-11-26 的 131 passed 与生产基础验收是历史结果，详见 §4C/4D。
+- CI 只做回归测试、静态检查和非阻断依赖审计，不部署。历史 run `44518300890` 曾总体 Success；**2026-11-27 当前本地 register 基线为 226 passed（部署专项 18 passed），webapp 离线自测 51 通过 / 0 失败；FE-01 已部署，本轮未触发 CI、未做真实浏览器视觉验收与完整登录态异常路径验收**。2026-11-26 的 131 passed 与生产基础验收是历史结果，详见 §4C/4D。
 - 已有安全备份脚本，但**尚无定时调度、异地存储与恢复演练**；四个高频 GET 轮询路径已于 2026-11-27 停止写访问日志并随本轮部署同步。
 - gunicorn 单 worker；内存限流不支持多 worker 扩容。
 
@@ -238,7 +251,7 @@ D:/MySQL/
 | **`schema_chat_migrate.sql` 会删数据** | 删除重复的 `friend_request`（每组只留最小 id）再加唯一约束 | 执行前先备份该表；迁移顺序为 `schema.sql` 优先、其余按文件名排序 |
 | **头像目录属主必须是 `regweb`** | 全量 `deploy.py` 只做 `chown -R root:root`，之后上传头像会静默失败 | 部署后补 `chown -R regweb:regweb /opt/bnu-register/var` |
 | **gunicorn 保持 `--workers 1`** | 限流字典、验证码、登录失败计数、对局房间都在进程内存，加 worker 会全部失效 | 扩容前先迁到 Redis 等外部存储 |
-| **改静态文件必须递增模板里的 `?v=N`** | 浏览器继续用缓存旧代码 | 2026-11-27 当前模板值：`style.css?v=11`、`im.css?v=10`、`im.js?v=10`、`game.js?v=5`、`app.js?v=5`、`avatar-crop.js?v=3`、`favicon.svg?v=1`、`archive.css?v=4`、`archive.js?v=5`、`idea.css?v=5`、`idea.js?v=4`、`content_profile.js?v=3`；其中 idea 资源版本已随分类、治理、编辑与个人页升级递增；`im.js` 内还硬编码一份鲸鱼头像版本号 |
+| **改静态文件必须递增 `asset_versions.py` 中的版本** | 浏览器继续用缓存旧代码 | 模板不再手写 `?v=N`，统一由 `register/asset_versions.py` 的 `ASSET_VERSIONS` 与 `asset_url()` 生成；当前包含 `style.css=11`、`im.css/im.js=10`、`game.js/app.js=5`、`avatar-crop.js=3`、`favicon.svg=1`、`archive.css=5`、`archive.js=6`、`idea.css=6`、`idea.js=7`、`content_profile.js=4` 等；`im.js` 内还硬编码一份鲸鱼头像版本号 |
 | **改模板 / CRLF 文件用编辑器逐处改，别用 Python 脚本批量重写** | `newline=''` 会把 CRLF 换成 LF，产生整文件噪音 diff | `home.html`、`app.py` 是 CRLF，需按字节或标记处理 |
 
 ### 环境变量与常用命令
@@ -247,13 +260,13 @@ D:/MySQL/
 **webapp**：`SECRET_KEY`、`COOKIE_SECURE`、`APP_USER`、`APP_PASSWORD_HASH`、`DB_*`。
 部署脚本另用 `DEPLOY_HOST`、`MYSQL_PW`、`DB_PW`；SSH key 固定读 `~/.ssh/id_rsa`。
 
-> `register/.env.example` 已入库（仅键名与安全示例，`SECRET_KEY` / `DB_PASSWORD` / `SMTP_PASS` / `AI_API_KEY` 留空）；真实 `.env` 不入库，换服务器按模板手工建。
+`register/.env.example` 已入库（仅键名与安全示例，`SECRET_KEY` / `DB_PASSWORD` / `SMTP_PASS` / `AI_API_KEY` 留空）；真实 `.env` 不入库，换服务器按模板手工建。
 
 ```bash
 # 本地开发（register，端口 8081）
 cd D:/MySQL/register && SECRET_KEY=xxx python app.py
 
-# 本地回归：使用 uv 临时依赖环境，不修改 requirements；2026-11-27 当前基线 205 passed
+# 本地回归：使用 uv 临时依赖环境，不修改 requirements；2026-11-27 当前基线 226 passed
 uv run --with-requirements register/requirements.txt python -m pytest register/tests -q
 uv run --with-requirements webapp/requirements.txt python webapp/tests/selftest.py  # 51 通过 / 0 失败
 
