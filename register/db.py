@@ -1,5 +1,7 @@
 """注册系统数据访问层。"""
 
+import hashlib
+import hmac
 import os
 
 import pymysql
@@ -68,9 +70,32 @@ def is_taken(student_no=None, nickname=None, email=None):
 
 # ---------- 验证码 ----------
 
+CODE_ATTEMPT_PURPOSE = "register_attempt"
+CODE_ATTEMPT_LIMIT = 5
+CODE_ATTEMPT_WINDOW = 300
+
+
+def _attempt_key(scope, value):
+    """合成键落在现有 (email, purpose, created_at) 索引上，无需改表。"""
+    digest = hashlib.sha256(str(value).encode("utf-8")).hexdigest()
+    return scope + ":" + digest
+
+
+def _attempt_lock_name(key):
+    return "regtry:" + hashlib.sha256(key.encode("ascii")).hexdigest()[:48]
+
+
 def save_code(email, code, ttl_minutes, ip=None):
     with connect() as conn:
         with conn.cursor() as cur:
+            # 尝试事件只保留短时间；发码频率远低于验证频率，在这里分批清理，
+            # 避免在每次校验的热路径上做无界 DELETE。
+            cur.execute(
+                "DELETE FROM email_code WHERE purpose=%s "
+                "AND created_at <= DATE_SUB(NOW(), INTERVAL 10 MINUTE) "
+                "ORDER BY id LIMIT 1000",
+                (CODE_ATTEMPT_PURPOSE,),
+            )
             # 同邮箱的旧码作废，保证只有最新一条有效
             cur.execute(
                 "UPDATE email_code SET used=1 WHERE email=%s AND purpose='register' AND used=0",
@@ -81,10 +106,13 @@ def save_code(email, code, ttl_minutes, ip=None):
                 "VALUES(%s,%s,'register', DATE_ADD(NOW(), INTERVAL %s MINUTE), %s)",
                 (email, code, ttl_minutes, ip),
             )
+            challenge = cur.lastrowid
             conn.commit()
+            return challenge
 
 
 def check_code(email, code):
+    """兼容旧调用方的只读校验；注册提交必须使用原子 verify_code。"""
     with connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -96,6 +124,127 @@ def check_code(email, code):
             )
             row = cur.fetchone()
             return row["id"] if row else None
+
+
+def verify_code(email, code, challenge, ip, limit=CODE_ATTEMPT_LIMIT,
+                window=CODE_ATTEMPT_WINDOW):
+    """原子校验并消费最新验证码，返回 (code_id, remaining, status)。
+
+    challenge 是 save_code 返回的服务端行 ID。挑战、邮箱、IP 三个滑动窗口
+    各最多 limit 次；MySQL 命名锁串行化同一 bucket 的并发请求，行锁保证
+    正确验证码只能被消费一次。旧会话没有 challenge 时按邮箱锁兼容迁移。
+    """
+    if challenge is not None:
+        if not isinstance(challenge, (int, str)) or isinstance(challenge, bool):
+            return None, 0, "invalid"
+        try:
+            challenge = int(challenge)
+        except (TypeError, ValueError):
+            return None, 0, "invalid"
+        if challenge <= 0:
+            return None, 0, "invalid"
+    if limit < 1 or window < 1:
+        return None, 0, "invalid"
+
+    keys = {
+        "email": _attempt_key("e", email),
+        "ip": _attempt_key("i", ip or "unknown"),
+    }
+    if challenge is not None:
+        keys["challenge"] = _attempt_key("c", challenge)
+    # 固定为 IP -> 挑战 -> 邮箱；不同请求共享任一 bucket 时不会交叉等待成环。
+    lock_names = [_attempt_lock_name(keys["ip"])]
+    if "challenge" in keys:
+        lock_names.append(_attempt_lock_name(keys["challenge"]))
+    lock_names.append(_attempt_lock_name(keys["email"]))
+
+    with connect() as conn:
+        acquired = []
+        try:
+            with conn.cursor() as cur:
+                for name in lock_names:
+                    cur.execute("SELECT GET_LOCK(%s, 5) AS locked", (name,))
+                    row = cur.fetchone()
+                    if not row or row["locked"] != 1:
+                        conn.rollback()
+                        return None, 0, "busy"
+                    acquired.append(name)
+
+                # 先锁当前验证码行；这同时保证同邮箱的不同挑战也串行。
+                cur.execute(
+                    "SELECT id, code, expires_at FROM email_code "
+                    "WHERE email=%s AND purpose='register' AND used=0 "
+                    "AND expires_at > NOW() ORDER BY id DESC LIMIT 1 FOR UPDATE",
+                    (email,),
+                )
+                current = cur.fetchone()
+                if challenge is None and current:
+                    challenge = int(current["id"])
+                    keys["challenge"] = _attempt_key("c", challenge)
+
+                remaining = limit - 1
+                for key in keys.values():
+                    cur.execute(
+                        "SELECT COUNT(*) AS c FROM email_code "
+                        "WHERE email=%s AND purpose=%s "
+                        "AND created_at > DATE_SUB(NOW(), INTERVAL %s SECOND)",
+                        (key, CODE_ATTEMPT_PURPOSE, window),
+                    )
+                    count = int(cur.fetchone()["c"])
+                    remaining = min(remaining, limit - count - 1)
+                    if count >= limit:
+                        conn.commit()
+                        return None, 0, "limited"
+
+                # 三个范围各记一条事件；合成键避免 IP 计数退化为全表扫描。
+                for key in keys.values():
+                    cur.execute(
+                        "INSERT INTO email_code(email, code, purpose, expires_at, ip) "
+                        "VALUES(%s,'000000',%s,DATE_ADD(NOW(), INTERVAL %s SECOND),NULL)",
+                        (key, CODE_ATTEMPT_PURPOSE, window),
+                    )
+
+                if (not current or int(current["id"]) != challenge
+                        or current["expires_at"] is None):
+                    conn.commit()
+                    return None, max(0, remaining), "invalid"
+                if not isinstance(code, str) or not hmac.compare_digest(
+                        str(current["code"]), code):
+                    conn.commit()
+                    return None, max(0, remaining), "mismatch"
+
+                cur.execute(
+                    "UPDATE email_code SET used=1 WHERE id=%s AND used=0 "
+                    "AND expires_at > NOW()",
+                    (current["id"],),
+                )
+                if cur.rowcount != 1:
+                    conn.rollback()
+                    return None, 0, "invalid"
+                conn.commit()
+                return int(current["id"]), max(0, remaining), "ok"
+        finally:
+            if acquired:
+                try:
+                    with conn.cursor() as cur:
+                        for name in reversed(acquired):
+                            cur.execute("SELECT RELEASE_LOCK(%s) AS released", (name,))
+                except Exception:
+                    # 连接关闭也会释放命名锁；不能因清理失败改变校验结果。
+                    pass
+
+
+def release_code(code_id):
+    """账号创建失败时归还已原子占用的验证码，保留原有重试体验。"""
+    with connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE email_code SET used=0 WHERE id=%s AND used=1 "
+                "AND purpose='register' AND expires_at > NOW()",
+                (code_id,),
+            )
+            conn.commit()
+            return cur.rowcount == 1
 
 
 def consume_code(code_id):
@@ -110,7 +259,8 @@ def recent_code_count(email, minutes=60):
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT COUNT(*) AS c FROM email_code "
-                "WHERE email=%s AND created_at > DATE_SUB(NOW(), INTERVAL %s MINUTE)",
+                "WHERE email=%s AND purpose='register' "
+                "AND created_at > DATE_SUB(NOW(), INTERVAL %s MINUTE)",
                 (email, minutes),
             )
             return cur.fetchone()["c"]
@@ -122,7 +272,8 @@ def last_code_age(email):
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT TIMESTAMPDIFF(SECOND, created_at, NOW()) AS s "
-                "FROM email_code WHERE email=%s ORDER BY id DESC LIMIT 1",
+                "FROM email_code WHERE email=%s AND purpose='register' "
+                "ORDER BY id DESC LIMIT 1",
                 (email,),
             )
             row = cur.fetchone()

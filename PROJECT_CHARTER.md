@@ -2,7 +2,7 @@
 
 > 本文件是 `D:/MySQL` 的唯一事实来源（single source of truth）。
 > 任何架构、目录、技术选型、模块的变更，必须先更新本文件，再改代码。
-> 建立日期：2026-11-18。评审人：hi。
+> 建立日期：2026-11-18。评审人：hi。最后核对：2026-11-27。**当前状态：总纲升级已部署 ECS，register 全量 205 passed、部署专项 13 passed，webapp 离线自测 51 passed / 0 failed；9 个幂等迁移、代码切换和 webapp 安全配置同步完成，生产最终 53 项验收通过。** 两服务保持单 worker 回环监听且 `.env` 哈希未变；真实 MySQL 空库、真实浏览器视觉与完整登录态、CI、72h soak、HTTPS/公网开放与备份恢复演练仍未执行。
 
 ---
 
@@ -21,14 +21,14 @@
 
 一套面向**北师大 AI Lab** 的 Flask Web 系统集合，部署在阿里云 ECS（`/24` 内网 + SSH 隧道访问），后端 MySQL 8.0。由三个业务域组成。
 
-**一句话产品描述**：面向北师大 AI Lab 实名成员的「**idea 社区**」Web 产品——成员用真实学号注册，**发布 idea、收藏与点赞、评论讨论彼此的 idea，用 AI 帮忙分类/摘要/去重，点作者加好友私聊协作，公开分享的 idea 在「学习分享室」（公开分享墙）对外呈现**；**好友 IM 与「小鲸 AI」伙伴作为底层能力继续保留**，管理员在一个后台维护成员、内容与权限。主标语：**「一个 idea 能创造世界」**。**按对外产品标准建设与验收**：稳定长跑、有备份、可监控、可恢复、安全基线完整，不因"目前访问量小"降低标准。**2026-11-25 起以 idea 社区为项目新主线（Phase 1 进行中，详见 §12 ADR）；五子棋已从生产下线，不再作为对外卖点。** 完整产品叙述见 §9A.1。
+**一句话产品描述**：面向北师大 AI Lab 实名成员的「**idea 社区**」Web 产品——成员用真实学号注册，**发布 idea、收藏与点赞、评论讨论彼此的 idea，用 AI 帮忙分类/摘要/去重，点作者加好友私聊协作，公开分享的 idea 在「学习分享室」（公开分享墙）对外呈现**；**好友 IM 与「小鲸 AI」伙伴作为底层能力继续保留**，管理员在一个后台维护成员、内容与权限。主标语：**「一个 idea 能创造世界」**。**按对外产品标准建设与验收**：稳定长跑、有备份、可监控、可恢复、安全基线完整，不因"目前访问量小"降低标准。**2026-11-25 起以 idea 社区为项目新主线；Phase 1/2 与 2026-11-26 修复是历史生产版本，2026-11-27 总纲升级已部署 ECS 并通过 53 项生产验收（205 passed / 部署专项 13 passed）；五子棋已从生产下线，不再作为对外卖点。** 完整产品叙述见 §9A.1。
 
-**学习分享室（Learning Studio）· 公开分享墙**（`/archive`，纸片档案风格 idea 卡）属于本项目边界内的**公开展示层**，作为 `register/` 的公开门面接入，复用现有认证与路由，**不是独立系统**；展示的是公开分享的 idea，与领域头条同源（同一 `idea` 表 `published+public` 子集，详见 §12 的 2026-11-25 ADR）。2026-11-25 已增量部署上线（详见 §12 决策记录）。
+**学习分享室（Learning Studio）· 公开分享墙**（`/archive`，纸片档案风格 idea 卡）属于本项目边界内的**公开展示层**，作为 `register/` 的公开门面接入，复用现有认证与路由，**不是独立系统**；展示的是公开分享的 idea，与领域头条同源（同一 `idea` 表 `published+public+moderation_state='active'` 子集；2026-11-25 Phase 2 初始口径为 `published+public`，治理字段于 2026-11-27 在本地加入，详见 §12 ADR）。2026-11-25 已增量部署上线（详见 §12 决策记录），2026-11-27 治理升级已部署。
 
 | 业务域 | 目录 | 职责 | 状态 |
 |---|---|---|---|
-| 学生信息管理 | `webapp/` | 学生名单 CRUD、统计、公网部署样板 | 稳定，仅做安全修复 |
-| 注册与社区 | `register/` | 实名注册、认证、好友 IM、AI 对话（小鲸，已整合进 IM）、个人设置、管理后台 | 主要维护对象 |
+| 学生信息管理 | `webapp/` | 学生名单 CRUD、统计、SSH 隧道访问样板 | 安全补丁已同步生产，离线自测 51 项通过；初始化脚本禁止在已有服务器重跑 |
+| 注册与社区 | `register/` | 实名注册、认证、好友 IM、AI 对话（小鲸，已整合进 IM）、个人设置、管理后台、idea 社区、学习分享室 | 主要维护对象；2026-11-27 升级已部署并通过生产验收 |
 | 数据与运维 | `sql/` `scripts/` `backup/` | 建表脚本、数据导入、ECS 探针、SSH 密钥备份 | 支撑 |
 
 ### 1.2 不是什么
@@ -60,23 +60,24 @@
 
 ---
 
-## 2. 现状基线（已核实，2026-11-19）
+## 2. 现状基线（最后核对：2026-11-27）
 
 | 项 | 事实 |
 |---|---|
-| Python | 3.13（本地 `__pycache__` 标记为 cpython-313） |
-| 框架 | Flask 3.0.3 + gunicorn 22.0.0（单 worker） |
-| 数据库驱动 | PyMySQL 1.1.1，全部参数化查询 |
-| 其他依赖 | cryptography 42.0.8、Pillow 10.4.0、requests 2.31+ |
-| register 规模 | app.py 1494 行、db.py 880 行、admin.py 609 行（2026-11-19 复核） |
-| 数据库脚本 | 11 个 `schema*.sql`，含 4 个幂等迁移（avatar / chat / message_v2 / game_ai），由 deploy 的 `glob` 全部执行 |
-| 实时通道 | SSE（AI 流式输出，在用）· IM 2 秒轮询 · Socket.IO 本地已实现（对局；生产同步 worker 下退化为长轮询）|
-| 版本控制 | git 仓库已初始化（首次提交 `476e4a6`），核心功能提交 `8766e26` 已推送 `origin/main`；GitHub Actions 首次实跑成功（run `44507640518`）；register 75 项 pytest（7 文件）〔2026-11-19 基线，当前为 90 项 / 8 文件〕|
-| 生产状态（2026-11-19） | 已完成增量部署并核验：先做代码 + 数据库备份，`DEPLOY_EXIT=0`；服务 `active`、`.env` mtime 未变（未重置 `SECRET_KEY`）、迁移校验 `1,1,1`、授权 `1`、HTTP 路由全通、错误日志无、部署代码标记齐全 |
+| Python | 本地 / CI 3.13；生产 `/opt/bnu-register/venv` 为 3.10.12，本轮生产代码编译与运行验收通过 |
+| 框架 | Flask 3.0.3 + gunicorn 22.0.0（生产保持 `--workers 1 --threads 4`） |
+| 数据库驱动 | PyMySQL 1.1.1；idea/archive 业务 SQL 已检查为参数化查询 |
+| 其他依赖 | cryptography、Pillow、requests；生产 Pillow 固定为 3.10 可用的 12.3.0 |
+| 数据库脚本 | 当前 18 个 `schema*.sql`；2026-11-27 新增 category/moderation/profile，空库顺序与增量精确列/索引校验已实现；9 个生产迁移及隔离副本重复演练通过，全新空库未验 |
+| 实时通道 | SSE（AI 流式输出，在用）· IM 2 秒轮询 · Socket.IO 代码保留；五子棋生产已下线，`/socket.io/` 默认返回 410 |
+| 版本控制 | 当前交付包含 2026-11-27 总纲升级、生产部署加固与文档；提交历史以 `git log` 为准 |
+| 测试基线 | **2026-11-27 本地 register 205 passed、部署专项 13 passed，webapp 离线自测 51 passed / 0 failed**；生产最终验收 53 项通过；未触发 CI、未做真实浏览器视觉与完整登录态验收 |
+| 本轮静态检查 | Python `compileall`、全部 register JS `node --check`、安装器/备份脚本 `bash -n`、CRLF 感知 diff whitespace 检查通过；增量部署 `--dry-run` 通过 |
+| 产品状态 | 本轮六类分类、昵称搜索、并发编辑、治理/审计、个人主页、并发一致性、安全与交互升级已部署；五子棋下线、源码保留 |
+| 公网状态 | 域名已完成 ICP 备案；未改安全组，HTTPS 未配、公网未开放，仍只走 SSH 隧道 |
 | 访问方式 | SSH 隧道：`打开学生管理.bat` → 8080，`打开注册系统.bat` → 8082 |
-| 安全基线 | SQL 注入、XSS、CSRF、会话固定、CSV 注入均已防护；响应头齐全 |
 
-**关键洞察**：安全编码基本功良好，技术债集中在**工程化**（凭据、部署、配置、结构、运维），不在业务逻辑。因此总纲的重点是"收口"而非"重写"。
+**关键洞察**：本轮代码与 9 个幂等迁移已部署并通过 53 项生产验收；当前主要风险集中在真实 MySQL 空库、浏览器/登录态/2FA 异常路径、CI、72h soak、HTTPS 与备份恢复。生产部署不等于所有业务与公开风险已清零。
 
 ---
 
@@ -108,9 +109,10 @@
 | `auth` | 注册、登录、验证码、重置、会话 | 业务数据 |
 | `social` | 好友、会话、消息、在线状态 | 对局规则 |
 | `ai` | 对话、情绪标记、用量、BYOK；**新增：作为游戏对手的决策引擎** | 对局房间管理 |
-| `admin` | 用户管理、审计、导出 | 前台业务 |
+| `admin` | 用户管理、访问日志、导出；idea 内容检索、单条撤销/恢复、审计与作者通知（本轮已本地实现，未部署） | 不直接操作 `idea` 表；治理写操作必须经 `ideas/moderation.py`，不新增角色模型 |
 | `games`（新增） | 邀请、房间、对局状态、规则适配、结算 | 用户认证（复用 auth）、好友关系（复用 social） |
-| `archive`（新增，公开展示） | 研究成果展示页 `/archive`（`templates/archive.html` + `static/archive.css`、`archive.js`）；只读 API `archive_api.py`、数据层 `archive_data.py`、建表 `schema_archive.sql` | 用户认证（复用 register 现有 auth）；独立新增表 `research_achievement`（不改动任何现有表）；无 DB 凭据时 API 返回空，前端降级静态示例 |
+| `archive`（公开展示层） | 学习分享室 `/archive`（`templates/archive.html` + `static/archive.*`）；只读 API `archive_api.py`、数据层 `archive_data.py` | 用户认证（复用 register 现有 auth）；不另建内容事实来源。Phase 2 起只读 `idea` 表的 `published+public` 子集，2026-11-27 本地增加 `moderation_state='active'`；DB 失败返回空结构，不回退示例 |
+| `ideas`（主线社区） | idea 发布/并发编辑、列表、详情、收藏、点赞、评论、标签、领域头条、个人主页；治理状态与可见性谓词 | 不另建公开内容表；AI 结构化任务为后续阶段 |
 
 模块间**只通过数据层和明确的函数接口通信**，禁止跨模块直接操作对方的表。
 
@@ -137,15 +139,16 @@ D:/MySQL/
 │   │   ├── manager.py          # 房间与对局状态管理
 │   │   ├── rules/              # 各游戏规则适配层（规则引擎在此封装）
 │   │   └── static/             # 游戏专属静态资源
-│   ├── ideas/                  # 【Phase 1 新增，未部署】idea 社区业务包
+│   ├── ideas/                  # idea 社区业务包；Phase 1/2 已部署
 │   │   ├── __init__.py         # Blueprint 注册
 │   │   ├── routes.py           # HTTP：发布 / 列表 / 详情 / 收藏 / 点赞 / 评论
 │   │   ├── store.py            # 数据访问层（参数化 SQL + 可见性过滤）
-│   │   └── ai_tasks.py         # AI 分类/摘要/去重/推荐（复用 BYOK / 配额 / SSRF 防护）
+│   │   └── ai_tasks.py         # AI 分类/摘要/去重/推荐（后续阶段，复用 BYOK / 配额 / SSRF 防护）
 │   ├── templates/              # 前台页面（子目录按模块分组）
 │   ├── static/                 # 通用静态资源
 │   ├── schema*.sql             # 数据定义与幂等迁移（详见 §7）
-│   ├── schema_idea.sql         # 【Phase 1 新增，未部署】idea 5 表幂等建表，不改动现有表
+│   ├── schema_idea.sql         # idea 5 表幂等建表；Phase 1 已部署
+│   ├── schema_tags.sql         # Phase 2 标签字典与关联表；已迁移，回填已执行
 │   └── deploy/                 # 部署脚本
 ├── sql/                        # 一次性数据脚本，归档后不再修改
 ├── scripts/                    # 本地 Windows 运维工具
@@ -172,12 +175,12 @@ D:/MySQL/
 | Web 框架 | Flask 3.0.3 | 已验证，不迁移 | 保持 |
 | ORM | **不引入**，继续 PyMySQL | 现有 SQL 可控，迁移成本不划算 | 保持 |
 | 配置管理 | 环境变量 + 集中 `config` | 遵循十二要素，密钥不落盘 | 【改造】 |
-| 实时对局 | **Flask-SocketIO**（新增） | 落子是双向低频事件，SSE 无法回传 | 【新增】 |
+| 实时对局 | **Flask-SocketIO**（代码保留） | 五子棋已生产下线；恢复前再评估实时通道 | 生产禁用 |
 | AI 流式 | SSE | 在用：小鲸聊天走 `/api/chat` 流式，`im.js` 处理 delta/end 事件 | 保持 |
 | 对局状态 | 进程内字典（起步）→ 可选 Redis | 单 worker 足够，避免过早引入中间件 | 【新增】 |
 | 规则引擎 | 服务端自研 Python（见 §8.2） | 服务端权威校验，客户端无法伪造棋盘 | 五子棋已落地 |
 | 数据库迁移 | 版本化 SQL 脚本 | 替代散落的 `CREATE TABLE IF NOT EXISTS` | 已落地，持续补迁移 |
-| 测试 | pytest + Flask test_client / Socket.IO test client | 防止核心链路与权限校验回归 | 75 项本地全过 |
+| 测试 | pytest + Flask test_client / Socket.IO test client | 防止核心链路与权限校验回归 | **2026-11-27 本地 register 198 passed、升级专项 103 passed，webapp 离线自测 51 passed / 0 failed**；未跑 CI/生产全量测试、webapp 真实安装或真实浏览器验收 |
 
 **明确不采用**：SQLAlchemy 整体重写、微服务拆分、Docker/K8s、Node 独立游戏服务。理由：用户规模小，收益不抵风险。
 
@@ -188,15 +191,16 @@ D:/MySQL/
 以下为红线，任何变更不得突破：
 
 1. **凭据不落盘**：私钥、密码、API Key 只从环境变量或受保护的密钥文件读取。
-   - 现状违规：`backup/ecs_key_backup` 明文私钥、`verify_remote.py:9` 明文密码。
-   - 处置：移出版本库 → 服务器轮换 → 代码改环境变量。
+   - 历史违规已处理：明文私钥备份与脚本密码已移出版本库；服务器密钥轮换仍待 hi 拍板。
 2. **SECRET_KEY 强制注入**：缺失时**拒绝启动**，不得回退随机值。
-   - 现状：`app.py:45`、`webapp/app.py:45` 回退 `secrets.token_hex(32)`，会导致重启后 session 失效、BYOK 密钥永久损坏。
-3. **服务端权威校验**：对局胜负、身份、回合必须由服务端判定，不信任客户端提交的棋盘。
+   - 现状：`register/app.py` 与 `webapp/app.py` 均已 fail-fast；禁止用全量初始化脚本覆盖已有 `.env`。
+3. **服务端权威校验**：身份、权限、内容可见性由服务端判定，不信任客户端提交的状态。
 4. **SQL 参数化**：所有 SQL 用 `%s` 占位符；排序列继续走白名单。
-5. **CSRF / CSP / Cookie**：现有防护保持；新增 Socket.IO 握手必须校验登录态与 CSRF。
-6. **admin 边界**：ProxyFix 信任链收敛，后台 IP 白名单不可被 `X-Forwarded-For` 伪造绕过。
+5. **CSRF / CSP / Cookie**：现有防护保持；Flask 默认 session Cookie 只签名不加密，验证码答案、密钥等秘密不得放入会话。
+6. **admin 边界**：ProxyFix 信任链收敛，后台 IP 白名单不可被 `X-Forwarded-For` 伪造绕过；二次认证必须使用服务端挑战、失败上限和一次性消费，数据库故障不得静默降级为仅密码。
 7. **删除操作**：删除前说明清单与风险 → 移入回收站（Windows `SHFileOperationW` 带 `FOF_ALLOWUNDO`）→ 禁止永久删除。
+8. **部署不可破坏既有配置**：已有服务器禁止重跑全量初始化脚本；增量部署必须覆盖文件、迁移、授权，并对关键步骤失败强制非零退出。
+9. **生产保持单 worker**：限流、验证码、登录失败计数等仍在进程内存；扩容前先迁外部存储。
 
 ---
 
@@ -204,7 +208,7 @@ D:/MySQL/
 
 ### 7.1 现有 schema 职责
 
-| 文件 | 覆盖表（据头部注释） |
+| 文件 | 覆盖表 / 用途 |
 |---|---|
 | `schema.sql` | 基础用户与邮箱验证码 |
 | `schema_admin.sql` | 管理员、访问日志 |
@@ -212,9 +216,21 @@ D:/MySQL/
 | `schema_ai.sql` | AI 对话消息、用量、配置 |
 | `schema_byok.sql` | 用户自有 API Key |
 | `schema_chat.sql` | 好友、会话、IM 消息 |
-| `schema_avatar.sql` | 用户头像字段迁移（幂等 ALTER，2026-11-18 新增） |
+| `schema_chat_migrate.sql` | 好友申请去重并加唯一约束（会删重复数据，执行前备份） |
+| `schema_message_v2.sql` | 引用、转发、个人软删除字段 |
+| `schema_avatar.sql` | 用户头像字段迁移 |
+| `schema_game.sql` / `schema_game_ai.sql` | 对局邀请、战绩、AI 标识与可空会话字段 |
+| `schema_archive.sql` | 历史 `research_achievement` 建表；Phase 2 起不作为公开墙事实来源 |
+| `schema_admin_2fa.sql` | 管理员二次认证邮箱字段 |
+| `schema_idea.sql` | idea、收藏、点赞、评论、AI job 五张表；初始定义含分类原值、治理状态、版本与排序索引 |
+| `schema_tags.sql` | 标签字典 `tag_dict`、关联表 `idea_tag`，并调整默认可见性 |
+| `schema_category.sql` | 新增 `idea.category_legacy`；中文别名显式映射，空白/未知历史分类保留原值后归 `other` |
+| `schema_moderation.sql` | `idea` 独立治理字段、版本与索引；append-only `idea_moderation_log` |
+| `schema_profile.sql` | 个人主页与收藏排序索引 `idx_author_status_updated`、`idx_user_created` |
 
-**部署现状**：`register/deploy/deploy.py` 已改为 `glob("schema*.sql")` 遍历全部脚本，`schema.sql` 优先执行（新库建表、老库补列）。早期"只部署 schema.sql"的缺陷已修复。
+**当前数据模型（2026-11-27）**：`idea.status=draft/published/archived` 与 `moderation_state=active/revoked` 是两个独立维度；撤销不改变作者状态或可见范围。治理列包括 `row_version`、原因分类/说明、处置时间与管理员；日志保存动作、前后状态、版本、请求 ID、载荷指纹、内容哈希与元数据快照，不复制正文。`request_id` 唯一，同键同载荷幂等、同键不同载荷冲突。审计表应用权限仅 `SELECT/INSERT`，不授 UPDATE/DELETE。详见 §9C.4。
+
+**部署现状**：全量 `register/deploy/deploy.py` 遍历全部 18 个脚本，并优先 `schema.sql` → `schema_idea.sql` → `schema_tags.sql`，确保分类/治理/个人页迁移依赖已存在；**禁止在已有服务器重跑**（会覆盖 `.env`）。增量脚本按 game → message → game_ai → admin_2fa → idea → tags → category → moderation → profile 执行 9 个迁移，递归覆盖源码，并精确断言治理列类型/默认值、关键索引与审计表最小权限。上述为本轮本地实现，**真实 MySQL 空库与重复迁移尚未验证，ECS 尚未迁移**。
 
 ### 7.2 新增游戏数据（规划）
 
@@ -229,16 +245,16 @@ D:/MySQL/
 ### 7.3 迁移策略
 
 - 每个 schema 文件头部标注版本与依赖。
-- 新增字段用**幂等迁移脚本**，但注意：**MySQL 8.0 不支持 `ADD COLUMN IF NOT EXISTS`**（那是 MariaDB 语法）。本项目统一用 `information_schema` 判断 + `PREPARE stmt FROM @sql` 动态执行（见 `schema_avatar.sql`、`schema_chat_migrate.sql`），已在本地 MySQL 8.0.46 实测补列与重复执行均正常。
+- 新增字段用**幂等迁移脚本**，但注意：**MySQL 8.0 不支持 `ADD COLUMN IF NOT EXISTS`**（那是 MariaDB 语法）。本项目统一用 `information_schema` 判断 + `PREPARE stmt FROM @sql` 动态执行（见 `schema_avatar.sql`、`schema_chat_migrate.sql`）；**2026-11-19 历史实测**曾在本地 MySQL 8.0.46 验证补列与重复执行，**不代表 2026-11-27 新增 category/moderation/profile 迁移已通过真实空库与重复迁移集成测试**。
 - 禁止直接修改生产库结构而不更新 schema 文件。
 
 ### 7.4 标签体系（2026-11-25 Phase 2）
 
-- **新增两张表 + 建表脚本**：`tag_dict`（标签字典：`id` / `name` 唯一 / `slug` / `pinned` 置顶 / `status` 启用停用 / `created_at`）、`idea_tag`（`idea_id` + `tag_id` 多对多，联合主键幂等），脚本 `register/schema_tags.sql`。分类与标签共用字典，**不再硬编码 6 个分类**（原 3 处 Python + 2 处 JS + 2 处 schema 注释），改字典驱动、由后端下发前端。
-- **关键词搜索**：后端**参数化 LIKE**（`%s`，禁字符串拼接）覆盖 `title / content / tag.name`，修复原只 `FIND_IN_SET(tags)` 精确匹配、标题与正文搜不到的缺口；分页 `total` 用同一条件 COUNT。
-- **学习分享室导航标签 ≤10（后端硬保证）**：三段式选取——管理员 `pinned` 置顶优先 → 按关联到 `published+public` idea 的热度降序 → 同热度按最近关联时间降序；截取 **9 个自定义项 + 1 个「全部」= 总数 ≤10**，后端对数组做长度硬断言、前端 `slice(0,10)` 二次兜底；停用 / 无公开内容的标签不进入导航。标签随 `/api/archive.json` 的 `tags` 字段一并返回。
-- **兼容**：保留 `idea.tags` 逗号串作兼容读，事实来源切到关联表，发布 / 编辑双写、读路径切 JOIN，避免停机迁移。
-- **状态**：Phase 2 进行中，代码已提交、待部署验收。
+- **两张表 + 建表脚本**：`tag_dict`（标签字典：`id` / `name` 唯一 / `slug` / `pinned` 置顶 / `status` 启用停用 / `created_at`）、`idea_tag`（`idea_id` + `tag_id` 多对多，联合主键幂等），脚本 `register/schema_tags.sql`。分类已固定六类、由 `/api/categories` 下发，不再允许自定义；标签只关联 active 字典项。
+- **关键词搜索**：后端参数化 LIKE 覆盖 `title / content / idea.tags / tag.name / 当前作者 nickname`，分页 `items` 与 `total` 使用同一条件 COUNT；前端关键词 `q` 与精确标签 `tag` 已分离，使用 `EXISTS` 避免多标签关联重复行。只搜昵称，不搜学号、真实姓名或邮箱。
+- **学习分享室导航标签 ≤10**：仅统计 `published+public+moderation_state='active'` idea 的 active 标签，按 `pinned` → 使用数 → 最近关联时间 → 名称排序，取 9 个自定义项 + 1 个「全部」。
+- **兼容与迁移**：保留 `idea.tags` 逗号串作兼容读，事实来源为 active `tag_dict` / `idea_tag`；发布/编辑按 `casefold()` 去重并双写，删除 idea 或清空标签时显式清理 `idea_tag`。`schema_tags.sql` 用递归 CTE 幂等回填历史标签，仅新增字典/关联，不重启停用标签、不改写原字段。
+- **状态**：Phase 2 代码与标签回填是 2026-11-26 历史生产交付；2026-11-27 昵称搜索与六类分类已本地实现并回归，未部署。停用标签仍可能经兼容字段 `idea.tags` 命中，后续需收口该残留路径。
 
 ---
 
@@ -412,11 +428,11 @@ D:/MySQL/
 
 **面向谁**：北师大 AI Lab 的在校成员（学生 + 管理员），实名学号制，规模小、彼此认识。
 
-**解决什么**：三个日常需求——① 实验室成员之间能安全地私聊、找人；② 随时有个叫"小鲸"的 AI 伙伴聊两句、问问题，对话留得住、导得走；③ 想放松时和好友下一局五子棋。管理员在一个后台维护成员、查看日志、配置额度。
+**解决什么**：① 实验室成员发布、编辑、找回自己的 idea，收藏/点赞/评论并协作；② 公开分享的 idea 在学习分享室与领域头条一致呈现；③ 安全私聊、找人，并有"小鲸"AI 对话与导出；④ 管理员可审计地单条撤销/恢复内容，同时保护 private 元数据边界。五子棋已生产下线，不再是对外卖点。
 
-**产品气质**：可信赖、稳定、克制。不做增长黑客、不做推荐流、不做陌生人社交——这是产品边界，不是因为"用户少所以随便做"。文案可以亲切，但不能轻佻；涉及账号、密钥、隐私时必须严肃准确。**质量标准对标对外产品**：7×24 可用、故障可恢复、数据不丢、行为可预期。
+**产品气质**：可信赖、稳定、克制。不做增长黑客、不做陌生人社交；AI 输出不包装成事实。涉及账号、密钥、隐私与治理时必须严肃准确。**质量标准对标对外产品**：7×24 可用、故障可恢复、数据不丢、行为可预期。
 
-**一句话**：一个面向真实用户的实名社区——找得到人、聊得起来、有只小鲸陪着、还能下一盘；按对外产品的稳定性与安全性要求交付。
+**一句话**：一个面向真实用户的实名 idea 社区——找得到人、聊得起来、有只小鲸陪着，还能把 idea 发布、收藏、协作并公开分享；按对外产品的稳定性与安全性要求交付。
 
 ### 9A.2 提示文案分级与语气
 
@@ -617,6 +633,508 @@ D:/MySQL/
 
 ---
 
+## 9C. idea 编辑与内容治理（2026-11-27 本地实现，未部署）
+
+> **当前状态**：作者并发编辑、独立治理、append-only 审计、请求幂等、后台单条撤销/恢复、作者只读、private 元数据边界与公开 active 过滤已在主树本地实现并纳入 198 passed / 专项 103 passed。`schema_moderation.sql` 已创建；尚未执行真实 MySQL 空库/重复迁移，未部署 ECS，真实浏览器与并发集成验收待补。本节原规划中更完整的筛选/通知重试入口未全部实现，不以规划冒充现状。
+
+### 9C.1 现状问题与目标
+
+**改造前已核实的问题（历史背景）**：
+
+- `admin_user` 没有角色字段；后台登录使用服务端可撤销会话与邮箱 2FA，并限制本机隧道访问。
+- `idea.status` 只有 `draft/published/archived`，不能复用 `archived` 表达平台撤销。
+- 广场、分类、标签、头条与学习分享室各自维护公开过滤，遗漏治理条件就会泄漏撤销内容。
+- 原后台没有业务审计；`access_log` 只记 HTTP 且跳过 `/admin`。
+- 原删用户不处置 idea，编辑正文也不清理旧 AI 派生物；PUT 缺乐观并发保护。
+
+**本轮已落地**：上述编辑、治理、读取过滤、审计、private 边界与删号保护均已本地实现；真实数据库与浏览器验证仍未完成。
+
+**目标**：管理员可对任意 `public/friends/private`、任意 `draft/published/archived` 的 idea 执行**可审计、可恢复的软撤销**；默认不删除正文、评论、点赞、收藏和标签关系；作者能理解处置结果，普通用户不再看到被撤销内容；所有公开投影立即收口。
+
+**一期不做**：批量撤销、自动审核、管理员改写正文、私密正文常规查看、公开处置日志、举报工单、自动封禁、永久删除。后续有明确需求再单独立项。
+
+### 9C.2 作者原地编辑（治理功能的前置配套）
+
+1. 新增 `GET /ideas/<idea_id>/edit`：仅作者且 `moderation_state='active'` 可进入；非作者返回 404，避免泄露存在性；被撤销作者返回 403 并引导回只读详情。
+2. 复用 `idea_form.html` 与现有 `PUT /api/ideas/<id>`，不另建编辑 API。详情页作者操作区增加“编辑”；编辑页“取消”回原详情页。
+3. 表单携带隐藏 `row_version`。更新事务内 `SELECT ... FOR UPDATE`，以 `id + author_id + moderation_state='active' + row_version=?` 条件更新；版本冲突返回 409，禁止静默最后写入覆盖。
+4. `row_version` 仅用于作者内容编辑与治理状态变更，点赞/评论计数不增加它。每次成功编辑或撤销/恢复加 1。
+5. 标题、正文、分类或标签发生变化时，同事务清空 `ai_category/ai_summary/ai_tags`，等待后续 AI 任务重算；不得展示旧正文派生的摘要。
+6. 仅当规范化后的标签串与当前 `idea.tags` 不同才执行标签同步，避免只改标题时误删已停用标签的历史关系。标签确实变更时仍只关联 active 字典项。
+7. 原地覆盖，不引入修订历史表；审计记录保存 `content_hash` 与版本，不复制正文。
+
+### 9C.3 状态模型与可见性矩阵
+
+**两个独立维度**：
+
+- 作者生命周期：`idea.status = draft | published | archived`。
+- 平台治理：`idea.moderation_state = active | revoked`。
+
+撤销/恢复**不改变** `status` 或 `visibility`。撤销 draft/private 表示禁止其后续公开并记录处置，不意味着它此前对外可见；恢复 draft/private 后仍保持原范围。
+
+| 访问者 | active | revoked |
+|---|---|---|
+| 匿名 / 学习分享室 | 仅 `published + public + moderation_state='active'` | 不可见 |
+| 登录陌生人 | 仅 `published + public + moderation_state='active'` | 404，不泄露存在性 |
+| 符合好友关系判定的登录用户 | `published + moderation_state='active'`，范围 friends 或 public | 404 |
+| 作者 | 按现有规则查看自己的全部状态/范围 | 自己的正文、评论和计数只读；展示作者可见处置原因；禁止编辑、删除、点赞、收藏、评论 |
+| 管理员 | public/friends 正文可治理查看并留痕；private 仅元数据 | 同左；可执行恢复 |
+
+**隐私默认值**：一期不向管理员展示 private idea 的标题、正文、标签、AI 摘要和评论内容；列表标题脱敏，搜索不覆盖 private 内容，可按 ID、作者、状态、时间和可见范围定位。管理员可依据举报材料填写原因后撤销，无需先读取私人正文。若未来确需紧急查看 private 正文，必须另立案件号、处理目的、重新邮箱 2FA、短时授权和逐次审计，不授予永久查看权。
+
+**严重隐私/司法处置**：作者只读是默认值，因为内容归作者所有且平台无法阻止其复制自有内容；如需“墓碑页”须由产品与合规要求明确适用范围，不在一期隐式实现。
+
+### 9C.4 数据模型与幂等迁移
+
+已新增 `register/schema_moderation.sql`，并同步 `schema_idea.sql` 初始定义；已有库只执行幂等迁移。本轮未在真实 MySQL 执行。
+
+**`idea` 新增列**：
+
+| 列 | 类型 / 默认值 | 用途 |
+|---|---|---|
+| `moderation_state` | `ENUM('active','revoked') NOT NULL DEFAULT 'active'` | 独立治理状态 |
+| `row_version` | `BIGINT UNSIGNED NOT NULL DEFAULT 0` | 编辑与治理乐观并发版本 |
+| `moderation_reason_code` | `VARCHAR(30) NULL` | 当前处置原因分类 |
+| `moderation_reason` | `VARCHAR(500) NULL` | 作者可见原因说明 |
+| `moderated_at` | `DATETIME NULL` | 最近处置时间 |
+| `moderated_by` | `INT UNSIGNED NULL` | 最近处置管理员 ID |
+
+新增 `(moderation_state,status,visibility,created_at)` 索引。现有行默认全部 `active/version=0`，不改变当前行为。
+
+**`idea_moderation_log`（append-only）**：
+
+- `id`、`idea_id`、`action`：`revoke | restore | view_metadata | view_content | notify_sent | notify_failed`。
+- `from_state/to_state`、`reason_code/reason_text`、`internal_note`（仅后台可见，最长 1000 字）。
+- `admin_id/admin_name_snapshot`、`request_id CHAR(36) NULL UNIQUE`、`before_version/after_version`。
+- `snapshot_json`：保存作者 ID、原 `status/visibility/content_hash/row_version` 与请求载荷指纹，**不复制正文**；同 request_id 同载荷返回首次结果，不同载荷返回冲突。
+- `ip/ua/created_at`；索引 `(idea_id,created_at)` 与 `(created_at)`。
+- 不使用物理外键，删除用户/idea 后审计仍可追责；应用账号只授 `SELECT/INSERT`，显式禁止 `UPDATE/DELETE`。数据库 root 的越权能力不属于应用审计边界。
+
+**迁移要求**：用 `information_schema + PREPARE` 幂等补列、建表、加索引；重复执行结果一致。部署后断言枚举、默认值、索引、表存在和审计表最小权限。不得先上传依赖新列的代码再迁移。
+
+### 9C.5 统一读取与写入规则
+
+在 `ideas/store.py` 提供唯一治理谓词与 viewer 判定，其他模块复用，不各自复制条件：
+
+- 公开口径统一为 `status='published' AND visibility='public' AND moderation_state='active'`。
+- `_can_view()`：revoked 时只有作者可读；非作者在状态检查前返回不可见。管理员访问走独立后台服务，不冒充普通 viewer。
+- `list_ideas/list_categories/featured_by_category/list_tags` 的使用数只统计 active。
+- `archive_data.py` 的 items、tags、idea/点赞/收藏/评论统计全部增加 active 过滤。
+- `GET /api/ideas/<id>`：作者 revoked 返回 `moderation={state,reason_code,reason,moderated_at,can_write:false}`；不返回内部备注、管理员 IP 等信息。非作者 404。
+- 作者 revoked 详情页服务端显示处置原因与“只读”横幅，**不渲染**编辑、删除、收藏、点赞和评论表单；`idea.js` 同时依据 `can_write=false` 禁用交互，不能只靠前端隐藏。旧页面直接调用写接口仍由事务层拒绝。
+- 评论读取复用 viewer 判定；作者可读旧评论，但撤销后不能新增。
+
+**写操作必须在同一事务内锁行复核 active**，不能只在路由层 `can_view` 后盲写：作者编辑/删除、点赞、收藏、评论、治理撤销/恢复全部适用。撤销与作者编辑并发时只能一个成功；恢复与再次撤销并发时按 `row_version` 判定。
+
+撤销事务步骤：
+
+1. `SELECT idea ... FOR UPDATE`，校验 `expected_row_version`、当前状态、原因长度与原因白名单。
+2. 条件更新治理字段并 `row_version=row_version+1`。
+3. 同事务插入 `revoke` 审计；任一步失败整体回滚。
+4. 提交后立即调用 `archive_api.invalidate_cache()`，再发送作者通知。缓存失败写高优先级日志，30 秒 TTL 是最长残留窗口。
+
+恢复仅允许 `revoked → active`，必须填写恢复原因与版本；不改变正文、状态、可见范围、标签和互动。当前实现校验 idea 存在、目标状态与版本；**作者缺失或 `content_hash` 与撤销快照不一致时拒绝恢复并转人工复核是后续加固项，尚未实现**。
+
+### 9C.6 后台信息架构与路由（当前实现）
+
+导航在“成员 / 账号”之间增加“内容治理”。一期使用 HTML 表单 + POST/重定向，不新增后台 JSON API。**实际已实现路由**为 `GET /admin/ideas`、`GET /admin/ideas/<id>`、`POST /admin/ideas/<id>/moderate`（`action=revoke|restore`）；列表仅支持关键词与治理状态筛选，详情展示脱敏元数据、可治理正文与审计时间线。原规划中的独立 restore、通知重试和全局 audit 路由**尚未实现**，不得据此宣称已交付。
+
+| 路由 | 当前页面/动作 |
+|---|---|
+| `GET /admin/ideas` | 分页列表；关键词匹配非 private 标题或作者昵称，可按 active/revoked 筛选；private 标题替换为 `[private idea #id]` 且不参与关键词搜索 |
+| `GET /admin/ideas/<id>` | 治理详情、public/friends 正文、当前处置与审计时间线；private 不展示标题、标签或正文，仅展示处置所需元数据 |
+| `POST /admin/ideas/<id>/moderate` | 单条撤销或恢复；提交 `action`、`row_version`、UUID `request_id`、原因分类、作者可见原因与可选内部备注 |
+
+**当前界面与校验**：
+
+- 列表显示 ID、脱敏标题、作者、作者状态/可见范围、治理状态与最近处置时间；active/revoked 用文字 + 颜色区分，不能只靠颜色。原规划的 visibility/status/作者/ID 独立筛选与互动计数列尚未实现。
+- 撤销/恢复共用危险操作区，浏览器 `confirm` 二次确认；原规划要求手动输入完整 idea ID 尚未实现。
+- 当前原因分类为 `spam/abuse/privacy/unsafe/other`（广告垃圾、攻击骚扰、隐私敏感、安全风险、其他），撤销与恢复复用同一组 code；服务端校验分类与 1–500 字作者可见原因，内部备注最长 1000 字。
+- 审计时间线只读；内部备注不与作者可见原因混用。
+- 所有 POST 使用现有 `admin_required + session['_acsrf']`，保留本机访问限制；后台正文与审计页响应 `Cache-Control: no-store`。
+- 查看后台正文前写入 `view_content` 审计，写审计失败则拒绝展示；查看 private 元数据写 `view_metadata`。private 的后台边界是不展示私人标题、正文、标签和 AI 派生物；作者昵称、邮箱等处置/通知元数据仍向已认证管理员展示，其最小化范围需在真实环境复核。
+
+### 9C.7 通知、隐私与误操作防护
+
+- 治理事务提交后通知作者；当前邮件仅含作者昵称、处置结果与作者可见原因，不含正文、标签或内部备注。原规划中的 idea ID 与登录后详情链接尚未加入邮件。
+- 邮件失败不回滚已提交的治理结果；追加 `notify_failed`，成功追加 `notify_sent`。当前用派生通知 request_id 避免同次请求重放重复通知；**后台人工重试入口与行锁内成功通知检查尚未实现，重放已失败请求也不会自动补发**。
+- 状态操作使用隐藏 `request_id` 幂等；同键同载荷重放返回首次结果，同键不同载荷返回冲突。重复撤销/恢复不产生第二条状态变更。
+- 审计不存正文；IP/UA 随审计保存，当前页面时间线不展示这两列。建议至少保留 180 天，**期限确认前不自动清理**。
+- 一期不开放批量操作；未来批量必须逐条产生审计、逐条通知、限制单次数量并支持结果下载。
+- 管理员删除用户前必须检查其 idea：当前实现为作者仍有 idea 时拒绝删除；同事务删除/匿名化流程仍后置，不得继续制造孤儿。
+
+### 9C.8 测试与验收矩阵
+
+**当前覆盖边界**：198 passed / 升级专项 103 passed 包含进程内 mock 的权限矩阵、版本冲突、请求幂等/竞态、审计回滚、private 搜索与元数据脱敏、后台 no-store、分类/治理/profile schema 与部署清单静态断言。**真实 MySQL 迁移/并发/授权、真实邮件与浏览器交互尚未执行**，下表明确区分本地回归与待补验收。
+
+**自动化回归与真实验收矩阵**：
+
+1. **本地静态断言已完成；真实迁移待验**：schema 默认 active、索引/枚举与部署脚本最小权限断言；真实 MySQL 重复迁移与权限检查待补。
+2. **本地 mock 覆盖；真实数据待验**：`3 visibility × 3 status × active/revoked` 与匿名、作者、好友、陌生人、管理员组合；覆盖直接 URL、广场、分类、标签、头条、archive items/stats。
+3. **本地 mock 覆盖**：revoked 后作者写接口与互动接口拒绝；非作者 404；private 搜索/列表/详情无标题正文泄漏；内部备注不出现在作者 API/邮件。
+4. **本地 mock 已完成请求竞态、版本冲突与审计插入失败回滚；真实并发待验**：撤销与编辑/点赞/评论/恢复并发、重复请求幂等、审计插入失败回滚。
+5. **本地覆盖缓存失效调用；通知重试待实现**：邮件失败不回滚且留痕；当前重放不补发，人工重试与“重复重试不重复发信”尚未验收。
+6. **本地 mock 覆盖**：恢复不改变 status/visibility/content_hash/标签/互动；private/draft 恢复后仍不公开。
+7. **本地覆盖 CSRF、会话撤销、非本机访问；真实数据库权限待验**：审计表 UPDATE/DELETE 权限需在真实 MySQL 拒绝。
+8. **本地 mock 覆盖**：作者编辑非作者 404、版本冲突、AI 派生物清理、未变标签不误删。
+
+**真实浏览器验收**：管理员登录 2FA → 检索 public/friends/private → 撤销 → 公开墙/头条/广场立即消失 → 作者看到只读原因 → 恢复 → 按原范围重新出现；private 全程不展示正文。覆盖键盘操作、焦点、窄屏和邮件失败提示。浏览器连接器不可用时必须明确记录未验收，不得以单测替代。
+
+### 9C.9 分阶段实施、部署与回滚
+
+- **P0/P1/P2（2026-11-27 本地完成）**：默认值已授权；迁移脚本、统一 active 过滤、治理服务与审计、作者并发编辑、后台单条撤销/恢复、通知留痕与只读作者视图已实现并回归；未执行真实数据库迁移或部署。
+- **P3（另立需求）**：private 紧急查看、举报/申诉、批量、角色权限、独立通知重试入口、全局审计检索、保留期清理与永久删除流程。
+
+生产顺序：备份代码/数据库 → 执行迁移 → 校验结构与应用最小权限 → 上传代码 → Python 3.10.12 编译 → 重启 → HTTP/数据/缓存/日志验收。`.env` 与 `SECRET_KEY` 必须不变，gunicorn 保持单 worker。
+
+**回滚红线**：只能关闭后台写入口，保留迁移字段、审计表和 active 过滤代码；**禁止回滚到忽略 `moderation_state` 的旧版本**，否则已撤销内容会重新公开。不执行破坏性 down migration；紧急时先下线 idea/archive 入口。
+
+### 9C.10 默认值确认与后续边界
+
+1. **已确认并实现**：撤销后作者只读；private 一期仅元数据可见，紧急正文查看另案审批。
+2. **已确认并实现**：一期单条撤销/恢复；举报/申诉、正式工单与响应时限后置。
+3. **已确认**：审计与撤销内容保留期限未定前不自动清理。
+4. **已确认并实现**：作者仍有 idea 时拒绝删号，避免孤儿；未来匿名化/同事务删除另案。
+5. **后置**：墓碑页、多管理员 RBAC、批量与通知重试入口；当前不提前引入。
+
+### 9C.11 调研依据
+
+- [GitHub：管理破坏性评论](https://docs.github.com/zh/enterprise-cloud@latest/communities/moderating-comments-and-conversations/managing-disruptive-comments)：采用隐藏/取消隐藏、选择原因、时间线事件与权限分级，支持“可逆治理”而非一律物理删除。
+- [GitHub：管理组织仓库中报告的内容](https://docs.github.com/zh/communities/moderating-comments-and-conversations/managing-reported-content-in-your-organizations-repository)：管理员基于报告查看、分类、响应并结案。
+- [GitHub：企业审核日志](https://docs.github.com/zh/enterprise-server@3.20/admin/concepts/security-and-compliance/audit-log-for-an-enterprise)：审计记录操作者、受影响对象、动作、时间、来源等信息，并区分保留期。
+- [Microsoft Entra：可恢复性最佳做法](https://learn.microsoft.com/zh-cn/entra/architecture/recoverability-overview)与[恢复被删除的内容](https://learn.microsoft.com/zh-cn/entra/architecture/recover-from-deletions)：明确软删除/硬删除差异，删除与恢复均留审计。
+- [OWASP Authorization Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html)：设计阶段枚举用户、资源与操作组合，按最小权限拒绝并做回归测试。
+
+---
+
+## 9D. 个人主页与我的收藏（2026-11-27 本地实现，未部署）
+
+> 一期已在主树实现：登录态 `/profile`、“我发布的 / 我的收藏”双视图、汇总、搜索/筛选/排序/分页、`?view=favorites` 直达、直接取消收藏、权限变化后的隐藏逻辑与个人 API `private, no-store`；排序索引迁移已创建。账号页使用说明已同步。公开作者页、命名收藏夹和置顶内容仍后置；未执行真实 MySQL 迁移、未部署 ECS，浏览器验收待补。
+
+### 9D.1 目标与一期边界
+
+**目标**：解决“发布后找不到、收藏后回不去”的问题，让登录用户在一个页面完成：
+
+1. 查看自己发布的全部 idea，包括草稿、已发布、已归档，以及治理上线后的已撤销内容。
+2. 查看每条 idea 的全站累计点赞、收藏、讨论数。
+3. 查看自己收藏过的 idea，按收藏时间找回，并直接取消收藏。
+4. 用搜索、分类、标签、状态与排序快速整理内容。
+
+**一期默认方案**：
+
+- 新增登录态个人主页 `GET /profile`，与现有 `/me`（账号设置）分工；`/home` 仍是消息页，不改根路径跳转。
+- 页面只展示**当前登录用户自己**的内容，不接受 URL 中的 `user_id` 作为身份来源。
+- 两个主视图：`我发布的`、`我的收藏`；一期“收藏夹”指内置收藏视图，不允许多个命名收藏夹。
+- 公开作者主页 `/users/<uid>`、内容置顶、收藏夹分享、批量管理后置，避免一期同时引入公开隐私与分享权限。
+
+### 9D.2 改造前证据与已修复缺口
+
+> 下表是实施前证据；2026-11-27 已按本节实现本地修复，尚待真实数据库/浏览器验收。
+
+| 改造前现状 | 证据与影响 |
+|---|---|
+| `/home` 是 IM，`/me` 是账号设置，没有个人内容主页 | `app.py` 的 `/home`、`/me` 路由与 `templates/profile.html`；不能把内容管理继续塞进账号设置 |
+| `GET /api/ideas?author=<uid>` 已存在，但 SQL 固定 `status='published'` | `ideas/store.py:138-211`；不能直接承担“我的全部 idea”，否则草稿、归档和 private 管理入口缺失 |
+| 收藏只有切换与单条状态查询，没有列表接口 | `ideas/routes.py:330-341`、`ideas/store.py:433-450`；用户无法查看收藏内容 |
+| `idea_favorite` 是扁平关系表，已有 `created_at` | `schema_idea.sql:42-49`；可直接支持“最近收藏”，当前没有 folder/note 字段 |
+| 广场卡片已展示点赞、收藏数 | `static/idea.js:64-74`；可复用视觉与字段，不必另造计数体系 |
+| 现有列表采用“加载更多”，有请求序号和按钮防重 | `static/idea.js:75-113`；个人主页沿用该模式并补错误重试 |
+| 仓库没有成熟 ARIA tabs 组件 | `home.html` 的 `.im-tabs` 只是 `role="presentation"`；新 tabs 必须按 WAI-ARIA 实现或改为普通链接导航 |
+| `revoked` 治理原未实施 | 现已在 §9C 实现独立 `moderation_state`；个人列表保留作者自己的 revoked 只读卡片，非作者/收藏列表排除 revoked，不把 archived 当撤销 |
+
+**需要升级的问题**：
+
+1. 内容管理入口缺失：作者只能回广场按作者条件找已发布内容，无法集中处理草稿、归档与私密 idea。
+2. 收藏不可见：存在收藏关系却无法浏览、搜索、排序或取消。
+3. 新列表存在泄漏风险：若只做 `idea_favorite JOIN idea`，取消好友、改为 private、归档或撤销后，隐藏内容的标题、摘要和总数可能泄露。
+4. 汇总口径尚未定义：`like_count` / `favorite_count` 是全站历史计数，包含作者本人及内容变私密前的互动，不能标成“当前好友互动”。
+5. 收藏/点赞原存在检查与写入跨连接竞态；**本轮已修复**：点赞/收藏/评论与删号共享用户行锁，事务内复核权限/active 并更新计数。
+6. 收藏时间原缺复合索引；**本轮已修复**：`schema_profile.sql` 增加 `(user_id,created_at,idea_id)` 与作者状态更新时间索引。
+7. 账号删除原会遗留 idea 孤儿；**本轮已修复**：作者仍有 idea 时拒绝删号；删号同事务清互动并重算计数。公开作者页仍须另做隐私设计。
+
+### 9D.3 信息架构与路由
+
+| 路由 | 归属 | 一期行为 |
+|---|---|---|
+| `GET /profile?view=ideas` | 新个人主页，默认视图 | 登录后查看自己的全部 idea |
+| `GET /profile?view=favorites` | 新个人主页 | 登录后查看当前仍有权访问的收藏 |
+| `GET /api/profile/summary` | 个人主页 API | 返回自己的内容汇总，不接受作者参数 |
+| `GET /api/profile/ideas` | 个人主页 API | 自己的 idea 分页、筛选、排序 |
+| `GET /api/profile/favorites` | 个人主页 API | 自己的收藏分页、筛选、排序 |
+| `GET /me` | 现有账号设置 | 保留头像、昵称、密码、AI Key；增加“进入个人主页”链接 |
+| `GET /users/<uid>` | 后续公开作者页 | 一期不实现；未来只返回公开字段与当前 viewer 可见内容 |
+
+**身份与缓存**：
+
+- 页面路由未登录跳 `/login`；API 未登录返回 401，不返回空列表冒充“没有内容”。
+- 自己的 API 只使用 `session['uid']`；即使调用方传 `author` / `user_id` 也忽略。
+- 个人 API 响应使用 `Cache-Control: private, no-store`，不得复用 archive 的 30 秒公开缓存。
+- 页面 tab 状态写入查询参数，支持刷新与直接链接；不要在 localStorage 保存内容数据。
+
+### 9D.4 页面结构与卡片
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│ 头像  昵称                                  [账号设置]        │
+│ 我的内容：已发布 12 · 草稿 2 · 获赞 86 · 被收藏 31 · 讨论 14 │
+├──────────────────────────────────────────────────────────────┤
+│ [我发布的 14]                     [我的收藏 9]               │
+│ 搜索…              分类▼  状态▼        排序▼                │
+│                                                              │
+│ [状态] [可见范围]  标题                         ★ 收藏  ♥ 赞  │
+│ 摘要两行…                                              评论 3 │
+│ 分类 · 标签 · 更新时间                    [查看] [编辑]     │
+│                                                              │
+│                         [加载更多]                            │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**头部汇总口径**：
+
+- 自己页面标题为“我的内容”，统计自己全部 `active` idea，含 draft/published/archived 与 public/friends/private。
+- `已发布` 只统计 `status='published'`；草稿、归档、撤销分别计数，不混入“已发布”。
+- 头部获赞/被收藏/讨论排除 revoked；单张 revoked 卡片仍显示历史计数并标注“已撤销”。
+- 当前计数是**全站累计历史值**，包含作者本人互动；UI 用“全站累计”提示说明，不声称是当前可见用户或好友计数。
+- 后续公开作者页必须另算：只汇总当前 viewer 可见的 `published + active` idea，不能复用私人汇总。
+
+**我发布的卡片**：
+
+- 字段：标题、120 字摘要、分类、active 标签、状态、可见范围、更新时间、点赞/收藏/评论数。
+- 状态：草稿、已发布、已归档；治理上线后增加已撤销。
+- 可见范围：公开、好友可见、仅自己；只在自己页面显示。
+- 操作：查看详情；active 且作者可写时显示编辑；草稿可显示“继续编辑”。删除不放在列表卡片，避免误触，统一进详情二次确认。
+- revoked：显示处置原因与只读横幅，不渲染编辑、删除、点赞、收藏、评论入口；服务端同步拒绝写操作。
+
+**我的收藏卡片**：
+
+- 字段：标题、120 字摘要、分类、标签、作者昵称/头像、收藏时间、点赞/收藏/评论数。
+- 操作：查看详情、取消收藏；不显示原内容管理操作。
+- 取消收藏期间禁用按钮；以服务端结果移除卡片并更新计数，失败保留卡片并提示。
+- 不展示“谁收藏了我的 idea”等用户清单，避免把互动计数扩展成社交关系数据。
+
+### 9D.5 权限与可见性矩阵
+
+| 查看者 / 内容 | 个人主页列表 | 详情 | 写操作 |
+|---|---|---|---|
+| 作者看自己的 active draft/published/archived，任意 visibility | 可见 | 可见 | 按现有作者规则；治理上线后 revoked 只读 |
+| 作者看自己的 revoked（治理上线后） | 可见，带撤销原因 | 可见，只读 | 全部拒绝 |
+| 登录非作者看 active published public | 可见 | 可见 | 可按现有规则点赞/收藏/评论 |
+| 登录非作者看 active published friends，且符合好友关系判定 | 可见 | 可见 | 可按现有规则点赞/收藏/评论 |
+| 登录非作者看 private、draft、archived、revoked | **不得出现在列表或总数** | 404 | 拒绝 |
+| 匿名用户 | 不开放个人主页 | 不开放 idea 详情 | 拒绝；公开 archive 仍按原口径 |
+| 管理员 | 不因 admin 身份自动获得 private 正文 | 治理入口仅按 §9C 的元数据/紧急授权规则 | 撤销/恢复走独立治理审计 |
+
+**收藏关系不是授权**：`idea_favorite` 只表示收藏者曾保存过链接，不授予永久读取权。每次列表与总数都必须按当前 viewer 重新判断 status、visibility、好友关系和治理 active 状态。
+
+### 9D.6 数据查询与 API 契约
+
+**复用原则**：把当前散落在 `_can_view()` 与 `list_ideas()` 的可见性条件收敛为同一 SQL 谓词，供广场、详情、收藏列表和未来公开作者页复用。收敛时不得改变现有公开页 `published + public + moderation_state='active'` 的硬过滤。
+
+- `list_owned_ideas(viewer_id, ...)`：强制 `i.author_id = session uid`，允许全部作者状态；不得接受其他作者 ID。
+- `list_favorited_ideas(viewer_id, ...)`：从 `idea_favorite f JOIN idea i` 开始，再应用 viewer 可见性谓词；`items` 与 `COUNT(*)` 使用完全相同条件。
+- 可见收藏 `total` 不等于原始收藏关系数；隐藏项不得通过总数、ID、标题或摘要泄露。
+- 收藏接口可在**未筛选**时额外返回 `unavailable_count`，文案为“部分收藏已不可见”；筛选状态下不返回该值，避免制造误导。
+- 默认排序：我的 idea 按 `updated_at DESC, id DESC`；我的收藏按 `f.created_at DESC, f.idea_id DESC`。
+- 筛选：分类、active 标签、标题/正文/标签关键词；我的 idea 另加状态。排序字段走白名单。
+- 分页沿用 `page/size/total/has_more`，size 1–100，前端“加载更多”；切换筛选重置页码并递增请求序号。
+- 单条详情与写操作继续使用同一可见性判定；治理上线后，toggle 必须在一个事务内锁行复核，不允许“先查另一个连接、再写”。
+
+**索引（本轮已写入 `schema_profile.sql`，真实 MySQL 尚未执行）**：
+
+```sql
+-- idea_favorite 已有 created_at，只需补排序覆盖索引
+ADD INDEX idx_user_created (user_id, created_at, idea_id);
+-- 自己内容按作者、状态、更新时间分页
+ADD INDEX idx_author_status_updated (author_id, status, updated_at, id);
+```
+
+现有 `idx_idea(idea_id)` 保留，用于计数与删除清理。部署前需在真实 MySQL 验证迁移与执行计划。
+
+**响应示例**：
+
+```json
+{
+  "items": [],
+  "total": 0,
+  "page": 1,
+  "size": 20,
+  "has_more": false,
+  "unavailable_count": 0
+}
+```
+
+### 9D.7 收藏内容失效与恢复
+
+- 作者改为 private、取消好友、归档、撤销后：收藏卡片立即从列表和总数隐藏；只保留“部分收藏已不可见”的聚合提示。
+- 重新成为好友或作者恢复公开后：只要收藏关系仍存在，内容可重新出现；产品需接受这一“可恢复收藏”语义。
+- 物理删除 idea 时沿用现有清理，删除收藏关系，不制造墓碑卡。
+- 用户主动取消收藏才删除关系；权限变化不自动删除，避免好友临时变动造成数据丢失。
+- 不提供隐藏内容的标题缓存、离线缓存或预取；前端不得在 API 返回后自行用本地旧卡片补回隐藏项。
+
+### 9D.8 交互、移动端与无障碍
+
+- 两个 tab 采用 `role=tablist/tab/tabpanel`、`aria-selected`、`aria-controls`、`aria-labelledby`；选中态同时使用颜色、下划线和字重，不只靠颜色。
+- tab 内容异步加载，使用**手动激活**：左右方向键移动焦点，Space/Enter 才切换并加载，避免快速划过时连续请求。
+- tab 切换、筛选、加载更多均提供清晰焦点样式；toast 使用 `role=status`，错误区可重试。
+- 空态区分“从未发布 / 从未收藏 / 筛选无结果”，分别提供发布、去广场、清空筛选入口。
+- 请求失败显示区块级错误与重试按钮，不把失败伪装成空列表；旧响应用请求序号丢弃。
+- 移动端两个 tab 等宽单行，卡片单列，筛选自动换行；触控目标至少 44×44px，页面不产生横向滚动。
+- 遵循 `prefers-reduced-motion`；骨架/加载状态不遮挡焦点。
+- 复用 `idea.js` 的 CSRF、JSON 错误处理和 HTML 转义，但个人主页使用独立模板/脚本，避免广场筛选状态互相污染。
+
+### 9D.9 分阶段实施状态
+
+1. **P1（2026-11-27 本地完成）**：`/profile`、我发布的全部状态、我的收藏、汇总、搜索/筛选/排序/分页、空态/错误态与权限矩阵自动化测试。
+2. **P1.5（2026-11-27 本地完成）**：与 §9C 编辑页、`row_version`、撤销只读状态打通；真实数据库与浏览器验收待补。
+3. **P2：公开作者主页**：从作者昵称进入，只展示 `published + active + 当前 viewer 可见`；公开资料只含 id、昵称、头像，不传学号、真实姓名、邮箱；不展示收藏。
+4. **P3：命名收藏夹（需求验证后）**：保留全局 `idea_favorite` 语义，新增 folder 与 membership 多对多；支持名称、描述、排序、移动/移除。分享默认关闭，分享前另做权限设计，不能照搬 GitHub 的 public list。
+5. **P3：内容置顶（可选）**：参考 GitHub 个人页代表作模式，限制数量并支持排序；没有稳定内容产出的账号不强制显示。
+
+### 9D.10 验收清单
+
+- 作者自己可见全部 active 状态；非作者永远看不到 private/draft/archived/revoked。
+- 收藏列表与总数使用同一可见性谓词；隐藏内容不泄露标题、摘要、ID 或计数。
+- 取消好友、改 private、归档、撤销后立即消失；恢复权限后按既有关系恢复。
+- 头部汇总与单卡计数口径符合 §9D.4；不得把原始收藏行数当可见收藏数。
+- 关键词、分类、标签、状态、排序、分页结果与 total 一致；快速切换不出现旧响应覆盖。
+- 未登录页面跳登录、API 401；越权参数不能切换查看其他用户私有内容。
+- 取消收藏失败不移除卡片；重复点击不产生重复请求。
+- 治理上线后 revoked 卡片只读，所有写接口在事务内拒绝。
+- 桌面、窄屏、键盘-only、焦点顺序、减少动画均通过浏览器验收。
+- 个人 API 无公共缓存；日志不记录正文、邮箱、学号等敏感信息。
+
+### 9D.11 调研依据
+
+- [GitHub：置顶个人主页内容](https://docs.github.com/en/account-and-profile/setting-up-and-managing-your-github-profile/customizing-your-profile/pinning-items-to-your-profile)：个人页用代表作代替信息堆砌，支持筛选与排序；本项目仅借鉴“精选内容”，不一期引入置顶数据模型。
+- [GitHub：用 Stars 收藏与列表组织](https://docs.github.com/en/get-started/exploring-projects-on-github/saving-repositories-with-stars)：收藏是独立视图，可搜索/排序；私有仓库只对有读取权限者出现，印证“收藏不等于授权”。
+- [Apple Maps：创建与编辑收藏集合](https://support.apple.com/en-gb/guide/iphone/create-collections-iph0a53d4d7f/13.0/ios/13.0)：命名集合支持加入、移除、改名和排序，适合作为后续收藏夹参考；一期先验证是否需要多夹。
+- [NN/g：Tabs, Used Right](https://www.nngroup.com/articles/tabs-used-right/)：tabs 用于少量相关视图，需清晰选中态、键盘与焦点设计。
+- [W3C WAI-ARIA Tabs Pattern](https://www.w3.org/WAI/ARIA/apg/patterns/tabs/)：异步面板采用手动激活，并明确 tablist/tab/tabpanel、方向键、Enter/Space 与 ARIA 关系。
+
+### 9D.12 已确认边界与后续待确认
+
+1. **已确认并实现**：一期只做登录态个人主页，公开作者页后置。
+2. **已确认并实现**：“我的收藏”为单视图，命名收藏夹后置。
+3. **已确认并实现**：私人头部统计含草稿/归档/private，但排除 revoked；公开页另算可见口径。
+4. **已确认并实现**：收藏因权限变化隐藏但保留关系，恢复后可重新出现。
+5. **后续约束**：公开作者页上线前另做 PII 与统计设计；删号已有“有 idea 拒绝删除”保护，匿名化策略仍未定。
+
+---
+
+## 9E. 分类体系标准化（2026-11-27 本地实现，未部署）
+
+> 已统一前后端六类 code、中文名与顺序；单一常量源为 `ideas/constants.py`，发布/编辑使用固定下拉，API 拒绝未知值。`schema_category.sql` 已创建：历史分类先保留 `category_legacy`，已知中文别名显式映射，其余归 `other`。本轮未在真实 MySQL 执行迁移、未连接 ECS、未部署。
+
+### 9E.1 改造前问题结论
+
+- 截图中的“材料与传感”是 `CATEGORY_LABELS['mat']` 的中文展示名，**本身不是自定义分类**；仅凭截图不能证明数据库存的是中文值还是 `mat`。
+- 改造前 `CATEGORIES=('ai','edu','bio','energy','mat','other')` 只用于发布页 datalist 建议，不是校验白名单。
+- 改造前 `_validate()` 允许任意 ≤30 字分类；模板是自由文本输入；`list_categories()` 从数据库 distinct 值动态追加筛选项。
+- 因此分类既可能被人选错（例如 FFT 选到 mat），也可能出现“算法”等自定义值；系统没有自动分类或语义校验，不能把问题归因于 AI。
+- 历史测试数据已出现 `category='算法'`，证明自定义值路径真实存在。
+
+### 9E.2 目标分类标准
+
+| code | 默认中文名 | 用途 |
+|---|---|---|
+| `ai` | 人工智能 | 机器学习、视觉、语言、智能系统等 |
+| `edu` | 教育技术 | 学习科学、教学技术、教育评价等 |
+| `bio` | 生物信息 | 生物数据、计算生物、生命科学交叉等 |
+| `energy` | 可持续能源 | 能源材料、储能、环境与可持续技术等 |
+| `math` | 数学 | 数学理论、算法、信号处理与计算等 |
+| `other` | 其他 | 暂不归入以上五类的跨领域或新方向 |
+
+- 分类代码是唯一存储与筛选标准，中文名只做展示；UI 可显示“人工智能（ai）”等“名称 + 代码”。
+- 分类顺序固定，不随数据库内容漂移；`all/全部` 只是筛选占位，不写入 idea。
+- 细分主题写入标签，例如 FFT 使用 `FFT / DFT / 分治思想`，不再创造“算法”分类。
+- 2026-11-27 已确认使用 `math`（数学）作为第六类，不单独增加 `signal`（信号处理）。
+
+### 9E.3 页面与 API 改造
+
+- 发布/编辑页把分类改为固定 `<select>`，移除自由文本与 datalist；新建 idea 默认 `other` 或要求必选。
+- 创建与更新 API 都在服务端校验 `category in CATEGORIES`；未知值返回 400，不能只靠前端下拉。
+- `GET /api/categories` 返回固定六类及固定顺序，不再查询 distinct 数据库值；分类筛选始终展示六类。
+- 详情页与卡片显示统一中文名，可同时展示 code；archive 的公开投影继续使用同一 code。
+- 抽取单一分类常量源，供 routes/store/archive 复用，避免三处标签映射漂移。
+- AI 分类只能“建议”，不得自动覆盖用户选择；本期不引入自动归类。
+
+### 9E.4 历史数据迁移
+
+1. 迁移前备份，并导出 `category` distinct 值、数量、示例 idea id 供核对。
+2. 已是六个 code 的数据保持不变。
+3. 已知中文别名（如“人工智能”“数学”及历史“材料与传感”）建立显式映射表后转 code；历史 `mat` 显式迁移为 `math`。
+4. 未知自定义值默认迁到 `other`，原值写入 `category_legacy` 或迁移审计记录，确保可追溯、可恢复。
+5. 不根据标题自动猜测语义；FFT 这类内容可使用 `math`，并保留 `FFT / DFT / 分治思想` 等标签。
+6. 迁移后校验：不存在空白/未知 code，公开 API、广场筛选、头条与 archive 展示一致。
+
+### 9E.5 验收清单
+
+- 发布页只能选择六个固定 code，API 拒绝未知分类与中文别名直接写入。
+- 分类筛选顺序稳定，不因某类暂无内容而消失，也不出现历史自定义分类。
+- 新建、编辑、详情、广场、头条、archive 使用同一 code/label 映射。
+- 历史数据迁移有备份、映射清单与回滚方案；未知值可追溯。
+- 增加回归：合法六类、非法 code、中文别名、超长/空值、更新分类、公开投影与筛选。
+- 视觉与键盘验收覆盖下拉选择、移动端和错误提示。
+
+### 9E.6 已确认决策
+
+1. **已确认并实现**：固定六类；未新增 `math` / `signal`。
+2. **已确认并实现**：新建默认 `other`，仍可在发布前选择。
+3. **已确认并实现**：未知历史分类保留原值到 `category_legacy` 后归 `other`，不按标题猜测。
+4. **已确认并实现**：保留 `category_legacy` 字段；真实迁移与分布核对尚未执行。
+
+---
+
+## 9F. idea 关键词支持作者昵称（2026-11-27 本地实现，未部署）
+
+> 根据 idea 广场搜索框截图核查并实施。现有关键词搜索已增加作者昵称匹配，不新增用户检索接口，也不扩大任何内容的可见范围；本地代码与测试已更新，尚未部署生产。
+
+### 9F.1 改造前结论
+
+- `GET /api/ideas` 已接收 `q`，`ideas/store.py:list_ideas()` 原会对标题、正文、兼容标签串和 active 标签字典做关键词匹配。
+- 列表与 `COUNT(*)` 使用同一套 `published` 与 `public/friends/private` 可见性谓词，但改造前计数查询没有 join `app_user`，不能只改列表查询。
+- `app_user.nickname` 是唯一、最长 50 字的平台昵称，卡片已经展示 `author_nickname`，只是搜索条件未包含它。
+- 页面标签原写“标题、正文、标签”，输入框 `maxlength=30`，后端关键词实际清理后最多取 60 字；本轮已统一交互与边界。
+
+### 9F.2 推荐交互
+
+- 复用当前关键词框，不新增“昵称搜索”接口或作者自动补全。标签改为“关键词（支持标题、正文、标签、作者昵称）”，占位文案改为“标题、正文、标签或昵称”。
+- 输入按现有规则 trim、去除 `%` / `_` / 反斜杠后做部分匹配；匹配当前作者昵称，例如“小林”可命中“小林同学”的可见 idea。
+- 语义为 OR：同一关键词可以命中标题、正文、标签或作者昵称；仍可与分类、精确标签 `tag=`、最新/最热排序组合。若输入同时命中不同字段，结果只出现一次。
+- 现有数字 `author=` 参数保留兼容，不把昵称当作新的作者 ID 解析，也不新增按昵称枚举用户的能力。
+- 昵称改名后只按当前昵称搜索，不保留历史昵称索引；一期不提供“仅该作者”的独立筛选控件。
+
+### 9F.3 实现与安全约束
+
+1. 列表与计数查询均已增加 `LEFT JOIN app_user u ON u.id=i.author_id`；关键词条件已增加 `OR u.nickname LIKE %s`，参数由 5 个扩展到 6 个，两条 SQL 同步。
+2. 可见性、`published`、未来治理 `active` 过滤继续约束整行；昵称条件只能缩小结果，不能绕过原有 WHERE，也不能在 OR 分组外另起查询。
+3. 只匹配 `nickname`，明确不搜索或返回 `student_no`、`real_name`、`email`；该入口保持登录态，不新增匿名搜索或昵称联想建议。
+4. 继续使用参数化查询；前端对查询值 `encodeURIComponent`，服务端清理通配符，排序仍走固定白名单。
+5. `%昵称%` 是前导通配符，通常无法利用 `uk_nickname` 的 B-tree 索引；现有正文 LIKE 也采用类似方式，一期不为该字段新增冗余索引或迁移，实施后用真实数据检查执行计划与响应时间。
+6. 输入上限建议统一为 60 字，并在前后端都保留防御性限制；空关键词维持现有“不增加搜索条件”的行为。
+
+### 9F.4 验收清单
+
+- 昵称全称与部分关键词均能命中；标题/正文/标签既有搜索行为不回归。
+- 输入昵称时，`items` 与 `total` 数量一致；分类、精确标签、分页和 hot/new 排序可组合。
+- 可见性矩阵覆盖 public、friends、private、自己的内容、非作者与未来 revoked；不可见内容不会因昵称匹配进入列表或总数。
+- 覆盖大小写/中文、首尾空格、空值、60/61 字、`%` / `_` / 反斜杠、SQL 注入样式字符串，以及列表和计数 SQL 的占位符数量。
+- 页面标签、占位文案、移动端布局和键盘 Enter 搜索一致；不出现昵称自动补全或额外 PII。
+- 真实 MySQL 数据下比较改造前后执行计划；若昵称搜索明显拖慢广场，优先限制查询频率/长度或后续引入专用搜索索引，不削弱权限过滤。
+
+### 9F.5 决策已确认（2026-11-26，hi 授权按推荐方案实施）
+
+1. 采用“一个关键词框混合匹配标题/正文/标签/昵称”的 OR 方案，不单独增加“仅按作者搜索”控件。
+2. 搜索框与后端关键词上限统一为 60 字；空关键词仍表示不增加搜索条件。
+
+### 9F.6 本地验证状态（2026-11-27）
+
+- 当前 register 全量 **205 项 pytest 通过**，部署专项 **13 passed**；昵称搜索回归覆盖 q 透传、列表与计数 SQL 同步 join、关键词参数、通配符与反斜杠清理、60 字截断和可见性谓词。2026-11-26 的 133 passed 是历史结果，不是当前基线。
+- 本轮已完成生产迁移、代码切换与 53 项验收；**真实 MySQL 执行计划、完整登录态可见性矩阵、真实浏览器交互与 CI 仍未执行**。
+- `%昵称%` 的前导通配符性能风险仍保留；需用真实数据比较执行计划，不得以 mock 测试代替。
+
+---
+
 ## 10. 工程规范
 
 | 类别 | 规范 |
@@ -640,9 +1158,9 @@ D:/MySQL/
 | 数据可恢复 | 每次变更前备份，且做过真实恢复演练 | 无自动备份 | 定时 mysqldump + 异地 + 演练 |
 | 可观测 | 错误日志、关键操作留痕、异常可告警 | 日志有，无告警 | 加错误率/响应时长告警 |
 | 故障降级 | 上游 AI 挂、DB 抖、网络断时有明确降级与提示 | 部分（AI 有错误提示） | 补齐 DB 连接失败的友好降级 |
-| 安全基线 | HTTPS、密钥不落盘、CSRF/XSS/SQLi 防护、限流、BYOK 无 SSRF、admin 二次认证 | HTTPS 待配；SSRF pin IP 与 admin 二次认证**已于 2026-11-25 增量部署生产** | 公网化前必须上 HTTPS；两项安全修复已上线 |
-| 回归保护 | 每次提交自动跑测试 | GitHub Actions 已实跑 6 次，本地 75 项全过 | 依赖审计告警跟进（非阻断） |
-| 配置可重建 | 换机器可照文档重建环境 | `.env.example` 缺失 | 补模板 |
+| 安全基线 | HTTPS、密钥不落盘、CSRF/XSS/SQLi 防护、限流、BYOK 无 SSRF、可靠 admin 二次认证 | 本轮注册/图形验证码、SSRF 非 global/CGNAT/IPv6 拒绝与 IP pin、后台邮箱确认已本地实现；生产仍为 2026-11-26 历史版本；HTTPS 未配 | **升级部署与异常路径验收前不得公网开放**；补真实邮件、旧 Cookie、撤销、DB/邮件故障与 SSRF 验收 |
+| 回归保护 | 每次提交自动跑测试 | GitHub Actions 已配置；**2026-11-27 本地 register 198 passed、升级专项 103 passed，webapp 离线自测 51 passed / 0 failed** | 本轮未触发 CI；真实 MySQL 空库/重复迁移、webapp 真实安装/`nginx -t` 与浏览器验收待补；需在本地/CI/生产解释器复跑 |
+| 配置可重建 | 换机器可照文档重建环境 | `register/.env.example` 已存在 | 固定本地/CI/生产解释器版本并验证依赖兼容 |
 
 **原则**：访问量小 ≠ 可以降低标准。对外产品的可信度来自"即使没人用也一直是对的"。
 
@@ -668,36 +1186,73 @@ D:/MySQL/
 | 风险 | 等级 | 现状 | 处置 |
 |---|---|---|---|
 | ECS root 私钥明文落盘 | 高 | **已处置（移出）** | 私钥备份已移入回收站；**服务器轮换待 hi 拍板** |
-| 6 个 schema 只部署 1 个 | 高 | **已处置** | 部署脚本遍历全部 schema + 14 张表授权 |
+| schema 顺序/迁移漂移 | 高 | **2026-11-27 本地已修复，未真实验收**：全量优先基础/idea/tag，增量覆盖 9 个迁移并精确校验列/索引；当日 6 个生产迁移是历史事件 | 真实 MySQL 空库与重复迁移测试；禁止已有服务器重跑全量；后续 dry-run、备份、单独授权 |
 | SECRET_KEY 随机回退 | 高 | **已处置** | 两个 app 均改 fail-fast |
 | admin 白名单在反代下失效 | 高 | **已处置** | ProxyFix x_for=1 + nginx XFF 覆盖；依赖三前提（gunicorn 只绑回环、单层代理、XFF 覆盖），破坏则白名单失效 |
-| BYOK base_url SSRF | 中 | **已处置** | https + 公网 IP 白名单校验，两处 POST 禁跟随重定向 |
-| 无 git / 无备份 | 中 | git 已建；备份仍缺 | Phase 4 补定时备份 |
+| BYOK base_url SSRF | 中 | **2026-11-27 本地已加固，未部署**：拒绝非 global/CGNAT/IPv6，IP pin 且保留 Host/SNI/证书、禁代理/重定向；2026-11-25 pin IP 是历史生产状态 | 部署后回归；系统默认上游限制为可信管理员配置 |
+| 无自动/异地备份与恢复演练 | 中 | git 已建；有部署前本地备份，但未做本轮 72h soak、定时异地备份或恢复演练 | 公网化前补调度、异地与真实恢复演练 |
 | 内存限流多 worker 失效 | 中 | 单 worker 侥幸可用 | 文档中约束单 worker；扩容前改 Redis |
 | ~~Narabe 引擎很新~~ | — | 已弃用 | 改为服务端自研 Python 规则引擎，无外部依赖 |
 | HTTP 明文下的真实 PII | 中 | README 已标注风险 | 公网化前必须上 HTTPS |
-| 学号搜索接口泄露真实姓名 | 中 | `/api/users/search` 返回 `real_name` | Phase 1 评估是否仅返回昵称 |
+| 学号搜索接口泄露真实姓名 | 中 | **2026-11-27 本地已修复，未部署** | `/api/users/search` 已移除 `real_name` 返回；idea 昵称搜索不扩大 PII 暴露，部署后仍需回归最小字段 |
 | 内存字典限流不支持多 worker | 中 | gunicorn 单 worker 侥幸可用 | 扩容前改 Redis 或外部存储；保持单 worker 约束 |
 | ~~AI 对话后端成孤儿~~ | — | **误判，已澄清**：前端已整合进 `im.js`，功能在用 | 无需处置 |
-| 轮询触发全量写 access_log | 低 | IM 每 2s 轮询均写库 | Phase 1 将 `/api/` 轮询路径加入 `SKIP_LOG_PREFIX` |
+| 轮询触发全量写 access_log | 低 | **2026-11-27 本地已修复，未部署** | 会话、好友、申请与消息四个高频 GET 轮询路径已加入 `SKIP_LOG_POLL_GET`，不再每次写访问日志 |
 | 终局房间未销毁→一小时无法再开新局 | 高 | **已处置（2026-11-20 修订）** | 归档成功即销毁；归档失败则保留房间待补偿重试，不再无条件 `destroy`。重复邀请遇到 finished 房间先补偿归档、仍失败则拒绝，**禁止先清后建**；座位由服务端下发 |
 | ~~归档失败静默丢棋谱~~ | 高 | **已处置（2026-11-20）** | 原 `archive()` 吞异常后无条件销毁房间，`moves` 永久丢失。现改为成功才销毁、失败保留房间并写完整着法日志、上线时幂等重试 |
 | ~~DB 邀请与内存房间寿命不一致产生死邀请~~ | 中 | **已处置（2026-11-20）** | `game:join` 凭有效邀请重建房间（校验归属/好友/会话），已终局邀请才收口；活跃棋盘禁止被重新邀请复用 |
 | 已终局仍可认输覆盖战绩 | 中 | **已处置** | `on_resign` 校验 `status`，已终局拒绝 |
 | 棋盘下满无和棋 | 中 | **已处置** | `gomoku` 落满返回 winner=0，manager 写 draw |
-| 停用/删用户后会话仍可用 | 中 | **已处置** | `login_required` 与 Socket.IO `current_uid` 每次校验用户存在+status |
+| 普通用户停用/删除后会话失效 | 中 | **已处置并部署** | `login_required` 与 Socket.IO `current_uid` 每次校验用户存在+status；admin 会话已改服务端存储并支持登出撤销 |
 | AI 上游失败仍扣次数/污染历史 | 中 | **已处置** | 落库与扣次数移到上游返回 200 之后 |
 | >50 条未读被误标已读 | 中 | **已处置** | `mark_read` 限最近 50 条；API 返回 `has_older`，前端提示 |
 | 异地登录邮件 UA 未转义 | 中 | **已处置** | `html.escape` 转义 ua/ip/nickname |
 | 头像提示 40 vs 校验 80、裁剪不查尺寸 | 低 | **已处置** | 三处文案统一 80；裁剪接口补服务端最小尺寸校验 |
 | 好友申请唯一约束缺失 | 低 | **已处置** | schema 加 `uk_pair`；`ON DUPLICATE KEY` 支持拒绝后重发；`schema_chat_migrate.sql` 清历史重复 |
 | 删用户不删 game_record / 战绩内连接 | 低 | **已处置** | 删用户连带清 game_record；战绩改 LEFT JOIN 显示已注销 |
-| 非 dict 载荷抛异常 | 低 | **已处置** | join/move/resign 均加 isinstance 与 int 转换校验 |
+| 游戏事件非 dict 载荷抛异常 | 低 | **已处置** | games 的 join/move/resign 与 idea 创建/更新/评论均拒绝非对象载荷，避免 500 |
 | ~~register nginx 反代与 x_for=0 矛盾~~ | 高 | **已处置（hi 选方案 1）** | 改 `x_for=1` + nginx 三处 XFF 改 `$remote_addr` 覆盖；**约束：gunicorn 只绑回环、nginx 唯一入口、仅一层代理** |
-| BYOK DNS 重绑定 | 中 | **部分缓解** | 保存与请求前各校验一次公网 IP；彻底修需 pin IP（自定义 adapter / Host 头 + server_hostname），公网化前必做 |
+| BYOK DNS 重绑定 | 中 | **已处置（2026-11-25）** | 新增 `_base_url_pinned()` / `_PinnedHTTPSAdapter`，连接打校验后的 IP，SNI/证书仍按域名校验，禁重定向；剩余 CGNAT 边界见上 |
 | 裁剪头像缺像素上限 | 中 | **已处置** | 补 40M 像素上限，防高压缩比图片解压炸弹 |
 | 重置令牌非原子 | 中 | **已处置** | `claim_reset()` 单条条件 UPDATE 原子占用，并发只有一个成功 |
 | webapp POST/PUT 缺 Content-Type | 高 | **已处置** | `api()` 合并而非覆盖 headers，增删改学生可用 |
+| admin 2FA 验证码可由客户端读取 | 严重 | **已修复并部署；异常路径待验** | 改为服务端随机挑战与 `(token + code)` SHA-256；Cookie 仅持有 token，5 分钟有效且一次性消费 |
+| admin 2FA 穷举与故障降级 | 高 | **已修复并部署；异常路径待验** | 单挑战 5 次错误、每 IP 每小时 5 次发送；邮箱缺失、DB/邮件异常 fail-closed；挑战与发送记录有界；改密撤销该管理员会话与挑战 |
+| 更换 2FA 邮箱未验证新邮箱 | 高 | **已修复并部署** | 新邮箱收到确认挑战后才 UPDATE，确认前保留旧邮箱 |
+| admin 会话不可撤销、挑战可重放 | 中 | **已修复并部署** | 服务端会话支持登出撤销；挑战原子一次性消费；陈旧 `aid/a2fa` Cookie 失效 |
+| 注册验证码尝试次数可随 Cookie 重置 | 中 | **2026-11-27 本地已修复，未部署/未真库验收** | 改为服务端邮箱/IP/challenge 滑动窗口、命名锁串行与原子消费；账号创建失败可释放验证码 |
+| 图形验证码可无限签发与全表扫描 | 中 | **2026-11-27 本地已修复，未部署** | 增加 IP/全局频率、5000 活跃容量、过期堆增量清理与生成预留回收 |
+| ~~BYOK SSRF 未排除 CGNAT~~ | 中 | **本地已处置，未部署** | `_bad_ip()` 显式拒绝 CGNAT、非 global 与 IPv6，并保留 IP pin/Host/SNI/证书、禁代理重定向；真实部署验收待补 |
+| webapp 初始化脚本可破坏共享配置 | 严重 | **2026-11-27 本地已修复并复核合并，未部署** | 旧脚本会轮换共享密码、重置 `SECRET_KEY`、覆盖 Nginx/UFW 并回显凭据；现脚本为写前只读熔断、无 `--force` 的空环境初始化，不轮换共享配置、不改 UFW、不回显凭据；已有服务器禁止执行，真实安装验收待补 |
+| register 增量脚本覆盖不全 | 高 | **2026-11-27 本地已修复，未部署** | 递归清单与 9 个迁移覆盖 idea/tag/archive/category/moderation/profile；2026-11-26 等价分步发布及 86 项权限是历史记录 |
+| 增量部署可能假绿 | 高 | **本地已加固；历史生产基础断言通过** | 检查退出码、`.env` 哈希、依赖、服务、回环监听、HTTP/日志与备份；本轮新增精确列/索引断言，真实迁移验收待补 |
+| idea 分类/搜索/排序功能错误 | 高 | **已修复并部署** | 分类读 `/api/categories`；关键词与精确标签分离；hot/new 在服务端 SQL 排序 |
+| idea 分类体系可漂移 | 中 | **2026-11-27 本地已修复，未部署/未迁移** | 固定六类 code、服务端白名单与 select；历史未知值保留 `category_legacy` 后归 other；真实迁移与分布核对待补 |
+| idea 关键词支持作者昵称 | 低 | **2026-11-27 本地已实现，未部署** | `q` OR 匹配当前昵称；items/total 同步 join 且保持同一可见性谓词；当前回归通过，真实执行计划与权限矩阵待补 |
+| idea 详情计数层级错误 | 中 | **已修复并部署** | 读取 `data.idea`，以服务端计数更新，并在请求期间禁用按钮；计数刷新失败不误报操作失败 |
+| idea 重复提交与列表竞态 | 中 | **2026-11-27 本地已修复，未部署** | 列表请求序号忽略旧响应、加载中禁止重复翻页；点赞/收藏/评论共享用户行锁并在事务内复核权限，按钮防重复点击 |
+| idea 输入校验与 schema 不一致 | 中 | **已修复并部署** | 分类 30 字上限；创建/更新/评论拒绝非对象 JSON；标签数组也展开逗号项，统一类型/长度/数量/重复校验，存储层防御性限制 8 个 |
+| 标签读写与字典状态不一致 | 中 | **已修复并部署；兼容字段残留待收口** | active `tag_dict`/`idea_tag` 统一关联、兼容串、搜索与公开导航；按 pinned/使用数/最近使用排序；迁移已幂等回填历史逗号串，不重启 disabled 标签；停用标签仍可能经 `idea.tags` 命中 |
+| 删除 idea 残留标签关系 | 中 | **已修复并部署** | `delete_idea()` 显式删除 `idea_tag`，空标签更新也清理旧关系 |
+| 公开统计包含非公开活动 | 中 | **2026-11-26 已修复并部署；2026-11-27 active 过滤仅本地实现** | archive 的 idea/点赞/收藏/讨论统一 `published+public+moderation_state='active'`；活跃用户保持全站 active 口径；治理部分未部署 |
+| 学习分享室正文被截断/占位 | 中 | **已修复并部署** | API 返回完整 `content`，卡片仅用 120 字 `summary`；前端删除假正文与占位区块，安全渲染换行和 HTTP(S) 链接；生产 idea 43 已验证 1128 字 |
+| 学习分享室键盘/焦点/故障处理不完整 | 中 | **2026-11-27 本地已修复，未部署** | 已补键盘、焦点约束、HTTP 错误与窄屏处理；自动化回归通过，真实浏览器验收待补 |
+| 待归档游戏房间过期清理绕过恢复日志 | 高 | **未修复（游戏生产已下线）** | `get_room()` 超 24 小时直接 pop，绕过 `sweep()` 的完整 moves 日志；`claim_archive()` 直接读 `_rooms`。恢复游戏前统一过期清理并补测试 |
+| 学习分享室窄屏控件过小 | 低 | **2026-11-27 本地已修复，未部署** | 已改响应式布局与控件尺寸；真实窄屏浏览器验收待补 |
+| 管理员无法可逆撤销违规 idea | 高 | **2026-11-27 本地已实现，未部署** | 独立治理状态、统一 active 过滤、原子审计与单条恢复已实现；不得复用 archived 或物理删除 |
+| private 内容治理与隐私边界 | 高 | **本地已实现，未部署** | private 后台不展示标题、正文、标签与 AI 派生物，仅展示处置所需元数据；作者昵称/邮箱仍向已认证管理员展示，需复核最小化范围；紧急正文查看仍需案件号、重新 2FA、短时授权与逐次审计 |
+| 治理规划与当前实现存在差距 | 中 | **明确保留，未冒充已交付** | 当前只有 `/admin/ideas`、详情与 `/moderate`；独立 restore/notify/audit 路由、人工通知重试、完整 ID 输入确认、恢复 content_hash 一致性拒绝尚未实现 |
+| 治理通知失败后无法自动补偿 | 中 | **本地实现留痕，未部署** | `notify_failed/sent` 已记录；同请求重放不会补发，派生通知 request_id 防重复；人工重试与行锁内成功检查后置 |
+| 撤销内容经缓存/次要读取路径残留 | 高 | **本地已实现，未部署/未真实验收** | 广场、分类、标签、头条、archive items/stats 统一 active；提交后失效缓存；回滚不得移除 active 过滤 |
+| 删除用户遗留 idea 孤儿 | 中 | **2026-11-27 本地已修复，未部署** | 作者仍有 idea 时拒绝删号；删号共享用户行锁、同事务清互动并重算计数；匿名化策略仍后置 |
+| 作者编辑并发覆盖与 AI 速览过期 | 中 | **2026-11-27 本地已修复，未部署** | row_version 冲突 409；内容字段变化清空 ai_*；标签未变不重复同步 |
+| 个人内容与收藏缺少管理入口 | 中 | **2026-11-27 本地已实现，未部署** | `/profile` 双视图、直达收藏、no-store 已实现；公开作者页、命名收藏夹后置 |
+| 收藏列表可能绕过当前可见性 | 高 | **本地已实现，未真实验收** | items/total 复用 viewer 谓词；权限变化隐藏，收藏不授权读取 |
+| 收藏/点赞检查与写入竞态 | 中 | **2026-11-27 本地已修复，未部署** | 点赞/收藏/评论与删号共享用户行锁，事务内复核 active/权限并更新计数 |
+| 收藏时间与作者列表排序缺覆盖索引 | 低 | **本地迁移已创建，未执行** | `schema_profile.sql` 增加两个复合索引；真实 MySQL 与执行计划待验 |
+| 公开作者页可能泄露 PII 或私有统计 | 高 | **尚未开放，实施前约束** | 不复用 `db.get_user()` 完整对象；只返回 id/昵称/头像和当前 viewer 可见的 published+active 内容；先确定删用户策略 |
+| 账号页删除 API Key 无二次确认 | 低 | **2026-11-27 本地已修复，未部署** | 已实现删除确认；真实浏览器验收待补 |
+| webapp 客户端 IP 塌缩为回环地址 | 中 | **2026-11-27 本地已修复并复核合并，未部署** | 两套 Nginx 模板均以 `$remote_addr` 覆盖 XFF 并只绑定回环；离线 selftest 51 项通过，生产代理链、真实 IP 日志与限流待同步验收 |
 
 ---
 
@@ -730,7 +1285,7 @@ D:/MySQL/
 | 2026-11-18 | Phase 3 五子棋本地全链路完成 | 权威规则 + 邀请/落子/终局/归档 + `/games` 页面；15 项测试全过（含 Socket.IO 集成）。浏览器真人实测与生产切换仍待做 |
 | 2026-11-19 | 消息页 Tab 合并 + 无边界像素场景带 | hi 确认：会话/好友合为一个联系人列表（小鲸置顶）；聊天下方加像素蓝天白云场景，角色随情绪换表情（方案 B）。场景纯 CSS、与聊天区无边界；复用 SSE 的 end 事件驱动。备份在 `backup/im-merge-stage-20261119/` |
 | 2026-11-19 | 天空贯穿聊天区（方案 A）+ 新好友首条消息修复 | hi 选 A：`.im-body` 背景改天空渐变并与场景带精确衔接，实测无分界。Playwright 实测发现并修复：① `.im-blank` 的 display:flex 覆盖 hidden 致重叠；② 无会话好友发消息被 `activeConv=0` 拦截且丢输入 → 新增 `db.ensure_conversation()` + `POST /api/conversations`（仅好友、CSRF），`startChatWith` 先建会话再打开；send() 检查提前避免丢消息。备份 `backup/bugfix-conv-20261119/` |
-| 2026-11-19 | 代码审查修复（15 属实 / 2 纠正） | 高危：终局房间未销毁、base_url SSRF；中危：认输覆盖、会话失效、AI 失败扣费、未读误标、UA 未转义、和棋缺失、用户状态校验；低危：头像文案、好友唯一约束、战绩一致性。学生限流伪造 IP **不成立**（nginx 追加 XFF + x_for=1 取真实 IP）；"删用户在 db.py"**定位纠正**（在 admin.py）。23 项测试全过 |
+| 2026-11-19 | 代码审查修复（15 属实 / 2 纠正） | 高危：终局房间未销毁、base_url SSRF；中危：认输覆盖、会话失效、AI 失败扣费、未读误标、UA 未转义、和棋缺失、用户状态校验；低危：头像文案、好友唯一约束、战绩一致性。学生限流伪造 IP **不成立**（nginx 追加 XFF + x_for=1 取 XFF 末段，用户无法伪造）；"删用户在 db.py"**定位纠正**（在 admin.py）。23 项测试全过。**2026-11-26 补充**：该写法虽不能伪造，但会把所有客户端 IP 记成 Nginx 回环地址，导致全局限流，需改 XFF 覆盖 |
 | 2026-11-19 | 修复后复审（4 路子代理） | 发现 11 项，含 3 项本次修复引入/未修好：`p.port` ValueError→500、mark_read 二次打开仍误标、DNS 重绑定；另有 admin 白名单在 nginx 反代下**完全失效**（比原审查更严重）、webapp POST 缺 Content-Type 必失败、重置令牌 TOCTOU。hi 选方案 1 修 admin（x_for=1 + nginx 覆盖 XFF），已说明"隔离破则白名单破"的危害。测试补到 32 项 |
 | 2026-11-19 | 明确交付范围：安全稳定 + 既定功能落地（hi 拍板） | 不能仅维护现状；先完成五子棋 AI、离线邀请、新手引导等核心既定功能，后续游戏按阶段继续实现。不无边界扩张，不做无休止的 AI 聊天智能化；Mochi starter 不整合。先本地实现与测试，生产变更另行确认。冲突时以本条和 §1.4 为准 |
 | 2026-11-19 | 核心既定功能本地落地 | 三档五子棋 AI（服务端本地策略）、`game_invite` 持久化离线邀请、一次性新手引导、`.env.example`、CI、备份脚本与幂等迁移均已完成；51 项 pytest 全过。PvE 用独立负数房间与 `ai:whale` 战绩标识，AI 着法仍经公共规则层校验。浏览器实测仍待办（服务器部署见下条） |
@@ -742,21 +1297,77 @@ D:/MySQL/
 | 2026-11-20 | 增量部署（`deploy_incremental.py`，退出码 0） | 部署前脚本自动备份至 `/root/bnu-register-backups/20261120T121043Z/`（code.tar.gz 28M + school.sql.gz 26K）。7 步全通过：幂等 schema、授权、上传整份 FILES、pip install、重启、验证；路由与各静态资源全 200，`/games` `/home` `/me` 302 符合未登录预期。**`.env` mtime 未变**（`2026-11-18 13:16:36`），SECRET_KEY 未重置、BYOK Key 完好。服务器四个新代码标记均已出现，生产 Python 3.10.12 编译通过、模块可导入、纯内存冒烟 5 项全过，Socket.IO 长轮询握手 200。同时把 `904a8b6` 的 UI 改动一并同步（服务器此前 style.css / im.css / im.js / game.js / home.html / games.html 落后、favicon.svg 缺失），模板现引用 v=11 / v=6 / v=10 / v=5 且实测全 200。日志中 `gevent-websocket server is not configured` 在部署前 19:00–20:10 已出现 8 次，属同步 worker 下 WebSocket 降级长轮询的既有现象，非本次引入。**待办**：部署脚本第 7 步验证的静态 URL 仍是旧版号，Flask 忽略 query 故假绿，应从模板解析版本号生成 |
 | 2026-11-25 | 研究成果展示页接入方式（已增量部署上线） | 复用 `register/` 现有认证与路由：新增公开路由 `GET /archive`（渲染 `archive.html`，传 `csrf`、`logged`）；**根路径 `/` 行为完全不变**（未登录跳 `/register`、已登录跳 `/home`），`/archive` 仅作独立新增入口。新增模板 `templates/archive.html` 与静态 `archive.css?v=1` / `archive.js?v=1`，含 8 张成果卡与展开详情。决策：**不新建独立应用、不新增数据库表、不改 schema、不动认证机制、不改任何现有页面**，成果数据为前端静态示例（换真实资料只改模板内的数据数组）。理由：遵守安全红线（不公网开放、凭据不落盘）与单一事实来源（归属 register 公开展示模块，避免独立系统引入额外攻击面与维护成本）。**状态：2026-11-25 已增量部署上线**（服务器先备份、再上传 6 个新文件并在服务器 app.py 精确插入 9 行，未覆盖含并行改动的本地 app.py；核验路由全绿，数据库表未建时 API 安全降级静态数据） |
 | 2026-11-25 | BYOK base_url DNS 重绑定（SSRF TOCTOU）修复 | 原 `_base_url_safe()` 校验时解析一次 DNS，requests 发请求时二次解析，可"校验公网 IP、实际连内网 IP"。修复：保留原接口（兼容旧测试），新增 `_base_url_pinned()` 返回校验过的公网 IP，新增 `_PinnedHTTPSAdapter`（连接打 IP、SNI/证书校验仍用域名）与 `_pinned_post()`，BYOK 的 AI 请求与密钥探测均走钉住 IP 并禁重定向。系统默认 AI_BASE 由管理员配置，仍走原路径。新增 6 项回归。**状态：2026-11-25 13:53 已增量部署生产** |
-| 2026-11-25 | admin 二次认证（邮件验证码，零新依赖） | 原后台仅靠密码 + nginx/XFF 的 IP 白名单单一防线，代理链一变即静默失效。修复：密码通过后发 6 位验证码到管理员邮箱，验证通过才写完整登录态；`admin_required` 同时校验 `aid` + `a2fa`；验证码 5 分钟有效、每 IP 每小时限发 5 次。选邮件而非 TOTP 是因为生产 venv 是 Python 3.10、不引入新依赖，复用现有 mailer。新增幂等迁移 `schema_admin_2fa.sql`（admin_user 加 email 列）、账号页邮箱设置入口、未配置者仪表盘警告。未配邮箱时降级为仅密码，避免锁死管理员。**公网化前必须给所有管理员配邮箱**。新增 6 项回归。**状态：2026-11-25 13:53 已增量部署生产；唯一管理员 zjcyyds 的二次认证邮箱已设为 151675235@qq.com，邮件可达性已从服务器实测** |
+| 2026-11-25 | admin 二次认证（邮件验证码，零新依赖） | 后台在密码之后增加邮件验证码，`admin_required` 校验 `aid` + `a2fa`；验证码设计有效期 5 分钟、每 IP 每小时限发 5 次。新增 `schema_admin_2fa.sql` 与账号页邮箱设置入口。**状态：旧实现于 2026-11-25 部署；发现 Cookie 可读、错误次数不限、故障降级和重放问题后，加固版已于 2026-11-26 21:08 部署，基础结构/路由/日志验收通过；真实邮件与异常路径仍待完整验收。** 唯一管理员邮箱可达性此前已从服务器实测，具体邮箱不写入文档。 |
 | 2026-11-25 | 备案完成与公网化状态更正 | 域名已完成 ICP 备案、A 记录指向 `47.118.28.10`；但 ECS 安全组仍仅放行 22，80/443 不通，站未上线。本机阿里云 DNS 对该域解析超时（换 114 正常）。生成 HTTPS 版 nginx 模板与公网化操作手册。**决策：文档改为"已备案、公网化进行中"的准确状态，不写成"已上线"**；服务器侧操作（证书、安全组、nginx、部署）需 hi 授权后执行，本次未触碰服务器与任何密钥。 |
 | 2026-11-25 | 评审与整改方案归档到 `_ref/` | 三份方案文档（架构评审报告、域名访问诊断报告、公网化整改操作手册）归档到 `_ref/` 作只读参考。**决策：不新建 `docs/` 等平级目录**（遵守 §4.2 准入规则），`_ref/` 语义为设计参考素材，正好承载评审件；README 目录地图同步更新。**注意：方案文档是参考件，不是事实来源**——架构决策仍以本总纲为准，落地状态以源码与 pytest 为准。 |
 | 2026-11-25 | 修复二次认证上线导致的 admin 重定向死循环（ERR_TOO_MANY_REDIRECTS） | 上线后旧 cookie（有 `aid`、无新加的 `a2fa` 标记）触发 `/admin/login` ↔ `/admin/` 无限跳转：`login()` 见 aid 跳 dash，`admin_required` 见缺 a2fa 跳 login。**根因是新旧 session 结构不兼容**，非浏览器缓存问题。修复：`admin_required` 遇到"有 aid 无 a2fa"先 `session.clear()` 再跳登录；`login()` 改为仅在 aid+a2fa 齐全时跳 dash，其余陈旧态清掉；`verify_2fa()` 对已认证会话直接进 dash。同时修正 4 处日志格式串乱码（`aid=%s` → 字符串拼接，避开 `%` 在工具链中的转义问题）。新增 3 项回归（旧 cookie 跳转链终止、已认证直达 dash、verify 不绕回登录），累计 **105 项 pytest 全过**。二次增量部署生产，服务器本地用 Flask test_client 模拟旧 cookie 复验：跳转链 200 终止、无循环；`hvg` 残留 0、错误日志无。 |
-| 2026-11-25 | 增量部署 SSRF 修复 + admin 二次认证（`deploy_incremental.py`，退出码 0） | 部署前修正脚本三处会导致事故的缺陷：① 原脚本只硬编码 game/message/ai 三个迁移，不执行 `schema_admin_2fa.sql` → 新增 1d 步先迁移并校验 `admin_user.email` 存在，失败即中止；② FILES 列表缺 `templates/admin/verify.html` → 补入（连同迁移脚本）；③ `admin.py` 对 email 列有硬依赖 → 登录/账号/仪表盘查询改 try/except 降级，迁移漏跑也不锁死管理员。部署前用私钥做只读检查（服务 active / Python 3.10.12 / .env 完整）。凭据用文件方式提供、仅注入进程环境变量，未写入任何文件、未打印、未入日志。执行结果：备份 `/root/bnu-register-backups/20261125T055346Z/`（code 28M + school 30K）→ 1d 校验 email=1 → 上传 40 文件（含 admin/verify.html）→ 依赖校验 socketio 5.5.1 / gevent 25.9.1 → `.env` mtime 未变（2026-11-18 13:16:36，SECRET_KEY 未重置）→ 服务 active、监听 127.0.0.1:8081 → 全部路由 200/302（含 `/admin/verify` 302）→ 错误日志无。随后按 hi 指定把唯一管理员 `zjcyyds` 的 email 设为 `151675235@qq.com`，并从服务器用现有 mailer 实测该邮箱可达（测试码发出、SMTP_USER 已配置）。**HTTPS 与公网开放仍待后续步骤，本次未开放任何端口。** |
-| 2026-11-25 | 项目主线转向 idea 社区（hi 拍板） | **决策**：以「想法社区」为项目新主线——成员发布 idea、收藏/点赞/评论讨论、AI 分类摘要去重、点作者加好友私聊协作、精选成果对外展示；统一以 `idea` 为内容对象，好友 IM 与小鲸 AI 作为底层能力保留。**理由**：现有功能多入口堆叠、内容模型四分五裂，缺统一主线；以 idea 为统一内容对象可挂接复用现有认证、好友、AI 能力，避免新建独立系统引入额外攻击面与维护成本。**状态：Phase 1 代码已于 2026-11-25 部署上线**（5 表脚本、`register/ideas/` 包、想法广场前端均已上传服务器并通过路由核验；**建表待授权**，当前登录后列表为空）。完整方案见工作区 `idea-community-architecture.md`。 |
+| 2026-11-25 | 增量部署 SSRF 修复 + admin 二次认证（`deploy_incremental.py`，退出码 0） | 部署前修正脚本三处会导致事故的缺陷：① 原脚本只硬编码 game/message/ai 三个迁移，不执行 `schema_admin_2fa.sql` → 新增 1d 步先迁移并校验 `admin_user.email` 存在，失败即中止；② FILES 列表缺 `templates/admin/verify.html` → 补入（连同迁移脚本）；③ `admin.py` 对 email 列有硬依赖 → 登录/账号/仪表盘查询改 try/except 降级，迁移漏跑也不锁死管理员。部署前用私钥做只读检查（服务 active / Python 3.10.12 / .env 完整）。凭据用文件方式提供、仅注入进程环境变量，未写入任何文件、未打印、未入日志。执行结果：备份 `/root/bnu-register-backups/20261125T055346Z/`（code 28M + school 30K）→ 1d 校验 email=1 → 上传 40 文件（含 admin/verify.html）→ 依赖校验 socketio 5.5.1 / gevent 25.9.1 → `.env` mtime 未变（2026-11-18 13:16:36，SECRET_KEY 未重置）→ 服务 active、监听 127.0.0.1:8081 → 全部路由 200/302（含 `/admin/verify` 302）→ 错误日志无。随后按 hi 指定为唯一管理员配置二次认证邮箱，并从服务器用现有 mailer 实测邮箱可达（测试码发出、SMTP_USER 已配置）；**具体邮箱不写入文档**。**HTTPS 与公网开放仍待后续步骤，本次未开放任何端口。** |
+| 2026-11-25 | 项目主线转向 idea 社区（hi 拍板） | **决策**：以「idea 社区」为项目新主线——成员发布 idea、收藏/点赞/评论讨论、AI 分类摘要去重、点作者加好友私聊协作、公开分享的 idea 对外展示；统一以 `idea` 为内容对象，好友 IM 与小鲸 AI 作为底层能力保留。**理由**：以统一内容对象复用认证、好友、AI，避免多入口与多内容表造成数据分裂。**状态：Phase 1/2 与 2026-11-26 复审修复均已部署 ECS，基础验收通过；完整登录态与浏览器验收待补。** 完整方案见工作区 `idea-community-architecture.md`。 |
 | 2026-11-25 | 五子棋生产下线（hi 拍板） | **决策**：**只在服务器下线**——先备份代码，再禁用 `/games` 路由与 Socket.IO 事件注册、导航去掉对战入口；**不物理删除 `games/` 目录**，代码完整保留在本地仓库，可随时恢复上线。**理由**：hi 判定五子棋"没啥用"，下线以减少生产攻击面与维护成本；本地保留源码遵守"所有删除可恢复"原则（§1.3）。**状态：2026-11-25 已下线**（服务器备份 `/root/bnu-register-backups/20261125T055948Z/`，含 `games-disabled/` 归档；app.py 插入 `abort(410)`、注释 `init_games(app)`，导航去对战；核验 `/games` 登录后 410；本地 games/ 代码完整保留）；本文其余涉及五子棋"已部署/在用"的历史描述，以本条为准。 |
 | 2026-11-25 | 公开数据单一事实来源与可见性口径统一（Phase 2） | archive 原读 research_achievement（无数据回退写死 8 条示例）、头条读 idea，双数据源必然不同步，且发布默认 friends 使公开位看不到；统一为 idea 表 published+public 硬过滤、不带 viewer_id。详细 ADR 见下方专条 |
+| 2026-11-26 | 2FA、idea 与增量部署复审问题修复并部署（历史事件） | admin 验证码改服务端哈希挑战并限制尝试/发送，邮箱/数据库/邮件异常 fail-closed，换邮箱先确认，会话可撤销且改密撤销挑战；idea 统一 active 标签与公开统计，幂等回填历史标签，修输入边界、数组标签上限、筛选/排序/分页竞态和详情计数；增量脚本递归覆盖 Phase 2、自动备份、断言关键失败并拒绝非纯回环监听。**历史测试结果：register 131 passed。2026-11-26 21:08 已部署 ECS 并完成基础验收；不是 2026-11-27 本轮部署。** |
+| 2026-11-26 | ECS 备份、迁移、上传与学习分享室完整正文修复 | hi 授权部署更新代码。备份至 `/root/bnu-register-backups/20261126T123618Z/`，执行 game → message → game_ai → admin_2fa → idea → tags 六个幂等迁移，上传 84 个源码文件并用 Python 3.10.12 编译；保留原有 86 项表权限，不盲目扩权。用户手动重启后服务 active、仅回环监听、`.env` 哈希未变、日志无 Traceback/CRITICAL。学习分享室将卡片 120 字 `summary` 与详情完整 `content` 分离，删除假正文/占位区块，安全渲染换行与 HTTP(S) 链接；生产 idea 43 返回 1128 字完整正文。**边界：浏览器连接器不可用，未做真实浏览器验收；完整登录态矩阵与 2FA 异常路径仍待补，未提交或推送。** |
+| 2026-11-26 | idea 编辑与内容治理方案（历史规划，已由 2026-11-27 实现替代） | 当时仅规划独立治理、软撤销、append-only 审计、统一 active 过滤、作者只读、private 元数据与单条撤销/恢复；当日未改业务代码。当前实现与未部署边界见 §9C 和 2026-11-27 ADR。 |
+| 2026-11-26 | 个人主页与我的收藏方案（历史规划，已由 2026-11-27 实现替代） | 当日规划登录态 `/profile`、session 身份、收藏按当前 viewer 重授权；公开作者页、命名收藏夹、置顶后置。当前实现见 §9D。 |
+| 2026-11-26 | idea 分类体系标准化（历史设计，已由 2026-11-27 实现替代） | 当日设计固定六类、下拉、服务端校验与历史迁移；当前实现见 §9E。 |
+| 2026-11-26 | idea 关键词支持作者昵称（历史本地实现，待部署） | 复用 `q` OR 匹配标题/正文/标签/当前昵称，列表与总数同步 join；只搜昵称不搜 PII。当前纳入 2026-11-27 本地基线，仍未部署。 |
+| 2026-11-27 | 总纲升级生产交付与验收边界 | 固定六类与历史分类迁移、昵称搜索、作者 `row_version` 编辑、独立治理与 append-only 审计、请求幂等、后台单条撤销/恢复、个人主页/收藏、互动与删号行锁、AI 派生物失效、验证码/SSRF/交互加固及 schema/增量校验已完成；webapp 初始化、XFF、回环监听与强制验收补丁已同步生产。**当前 register 205 passed、部署专项 13 passed，webapp 离线自测 51 passed / 0 failed；9 个生产迁移与 53 项验收通过。真实 MySQL 空库、真实浏览器视觉与完整登录态、CI、72h soak、HTTPS/公网开放与备份恢复演练未执行。** 详见下方专条。 |
 
 ### 2026-11-25（架构）：公开数据单一事实来源与可见性口径统一
 
-- **决策**：`idea` 表为唯一事实来源；`/api/archive.json`（学习分享室 / 公开分享墙）与 `/api/ideas/featured`（领域头条）共用同一条硬过滤 `status='published' AND visibility='public'`，**不带 viewer_id**；`friends/private/draft` 只留在登录态社区内部；**不做双表同步**，`research_achievement` 表暂留作历史兜底、不删（避免不可逆 DDL），验收通过后再可逆退役。
+- **决策**：`idea` 表为唯一事实来源；`/api/archive.json`（学习分享室 / 公开分享墙）与 `/api/ideas/featured`（领域头条）共用同一条硬过滤 `status='published' AND visibility='public'`，**不带 viewer_id**；`friends/private/draft` 只留在登录态社区内部；**不做双表同步**，`research_achievement` 表暂留作历史兜底、不删（避免不可逆 DDL），验收通过后再可逆退役。**2026-11-27 起当前本地口径额外要求 `moderation_state='active'`，该治理升级尚未部署。**
 - **理由**：此前 archive 读 `research_achievement`（无数据回退写死 8 条示例）、头条读 `idea`，双数据源必然不同步；且发布默认 `friends` 导致公开位看不到内容。统一口径同时解决"不同步"与"可见范围矛盾"，并从结构上杜绝 private 泄漏；所有人看到的头条与公开分享墙一致。
-- **配套**：发布默认可见性改 `public`；公开 API 字段白名单（**禁** real_name / student_no / email / author_id / 正文全文 / content_hash / ai_* / user_id，owner 统一脱敏为「社区成员」）；缓存 TTL 60s→30s 并支持写操作失效；`stats` 五项改为 SQL 实时计算（已参加人数、平台内发布的总 idea 数、累计点赞、累计收藏、讨论数），0 条时全为 0、不再显示写死示例值。
-- **状态**：Phase 2 进行中，代码已提交、待部署验收（T6 部署与验收 V1–V15 由主代理稍后执行；本条不记录"已部署/已测试通过"结论）。
+- **配套**：发布默认可见性改 `public`；公开 API 不返回 real_name / student_no / email / author_id / content_hash / ai_* / user_id 等身份或内部字段，owner 统一脱敏为「社区成员」。**已公开 idea 的完整正文 `content` 属于公开展示内容，详情接口必须返回；卡片 `summary` 只取前 120 字，二者不得耦合。** 缓存 TTL 60s→30s 并支持写操作失效；`stats` 五项改为 SQL 实时计算（已参加人数、平台内发布的总 idea 数、累计点赞、累计收藏、讨论数），0 条时全为 0、不再显示写死示例值。
+- **历史状态（2026-11-26）**：Phase 2 与复审修复当日已部署 ECS；标签迁移、公开 API、详情完整正文、路由、监听与日志基础验收通过，**历史测试结果 131 passed**。2026-11-27 当前基线为 198 passed，但升级未部署；完整登录态、真实浏览器与 2FA 异常路径仍待补验。
+
+### 2026-11-26（历史规划，已由 2026-11-27 实现替代）：idea 编辑与可逆内容治理
+
+- **背景**：管理员需要撤销任意可见性的 idea，但现有 `status` 是作者生命周期，后台没有内容入口、业务审计或恢复语义；直接物理删除或复用 `archived` 都会破坏数据与公开投影。
+- **决策**：新增独立治理状态与版本；撤销/恢复不改变作者状态和可见范围；默认保留作者只读视图，非作者 404；private 一期仅向管理员展示元数据；所有写操作锁行复核 active；审计与状态变更同事务，通知在提交后执行且失败可重试（**原规划的人工重试入口至 2026-11-27 仍未实现，当前仅留痕**）；公开读取统一增加 active 过滤。
+- **实现边界**：一期只做单条撤销/恢复，不提前引入 RBAC、批量、举报工单或私密正文查看。完整字段、路由、矩阵、测试与回滚红线见 §9C。
+- **历史状态（2026-11-26）**：当日只完成调研与文档，未创建迁移、未改业务代码或部署。**2026-11-27 已按推荐默认值本地实现，当前状态见 §9C 与下方新 ADR。**
+
+### 2026-11-26（历史规划，已由 2026-11-27 实现替代）：个人主页与我的收藏
+
+- **背景**：广场能点赞/收藏，却没有“我发布的”管理入口和“我的收藏”列表；现有作者筛选固定只返回 published，不能展示草稿、归档与私密内容。
+- **决策**：一期新增登录态 `/profile`，与 `/me` 账号设置分工；默认“我发布的 / 我的收藏”双视图。个人 API 只使用 session uid，收藏列表与总数按当前 viewer 重新判定可见性，权限变化只隐藏、不自动删除关系。
+- **统计**：单卡沿用全站累计点赞/收藏/评论；私人头部汇总含自己的 active 草稿/归档/private，但排除 revoked。未来公开作者页只汇总当前 viewer 可见的 published+active 内容。
+- **扩展边界**：公开作者页、命名收藏夹、内容置顶后置；收藏夹分享默认关闭，不照搬 public list。
+- **历史状态（2026-11-26）**：当日仅完成调研设计。**2026-11-27 已本地实现 `/profile` 双视图、权限过滤与索引迁移脚本，未执行真实迁移或部署；当前状态见 §9D。**
+
+### 2026-11-26（历史设计，已由 2026-11-27 实现替代）：idea 分类体系标准化
+
+- **结论**：截图中的“材料与传感”对应标准 code `mat`，不是自定义值；真正问题是发布表单允许自由输入、后端不校验白名单、分类筛选从数据库 distinct 动态生成。
+- **决策**：固定 `ai/edu/bio/energy/mat/other` 六类，分类 code 单一事实来源；页面用下拉，API 服务端拒绝未知值，FFT 等细分主题走标签。
+- **迁移**：先备份与导出分类分布；已知中文别名显式映射，未知自定义值默认 other 并保留原值；不按标题自动猜测语义。
+- **历史状态（2026-11-26）**：当日仅更新方案。**2026-11-27 已本地实现六类白名单与 `category_legacy` 迁移脚本，未在真实 MySQL 执行、未部署；当前决策见 §9E。**
+
+### 2026-11-26（历史本地实现）：idea 关键词支持作者昵称
+
+- **背景**：广场关键词已支持标题、正文与标签，卡片也展示作者昵称，但无法用昵称找到其 idea。
+- **决策**：复用 `q`，采用 OR 同时匹配四个字段；不新增匿名用户搜索、昵称联想或独立作者 ID 解析。列表与计数查询都 join `app_user`，关键词参数由 5 个扩到 6 个。
+- **权限**：昵称匹配必须留在现有 published 与 public/friends/private 谓词内，只搜当前可见内容；不搜索或返回学号、真实姓名、邮箱。2026-11-26 时规划未来增加治理 active 过滤；**2026-11-27 已在本地实现并约束整行，尚未部署**。
+- **成本**：前导通配符通常无法使用昵称唯一索引；2026-11-26 当日不加冗余索引或迁移，真实数据执行计划待部署前补核；2026-11-27 仍保留该风险。
+- **历史状态（2026-11-26）**：当日 **133 项 pytest** 通过，登录态 HTTP 冒烟和部署清单 dry-run 通过；两轮只读审查未留下确认问题（反斜杠边界已修复）。**2026-11-27 当前全量为 205 passed，昵称搜索已部署；真实 MySQL 执行计划、完整权限矩阵与浏览器交互待补验，详见 §9F。**
+
+### 2026-11-26（修复）：安全与部署阻断项优先于公网化
+
+- **审查范围**：检查 idea/archive 数据层与交互、后台认证、验证码、SSRF、部署脚本和现有测试；随后按授权完成本地修复，并于 2026-11-26 晚间连接 ECS/MySQL 完成备份、迁移、上传和重启。未提交或推送。
+- **确认结论（2026-11-26 当日）**：学习分享室与领域头条均硬过滤 `published+public`，登录态详情隔离正确，SQL 参数化与主要 XSS/CSRF 防护存在。问题集中在 2FA 秘密存放与挑战生命周期、验证码资源/尝试限制、部署脚本失败断言、标签读路径、前端状态一致性和公开详情正文投影。**2026-11-27 本地版本额外增加 `moderation_state='active'`，尚未部署。**
+- **处置**：2FA 改为服务端哈希挑战、5 分钟有效、5 次错误/IP 限发、一次性消费、可撤销会话、邮箱确认与 fail-closed，改密同步撤销会话和挑战；idea 统一 active 标签、历史标签幂等回填、公开统计与筛选排序，修输入边界和详情计数；增量脚本补齐 Phase 2 清单、迁移、授权、自动备份、失败断言与 8081 纯回环校验；学习分享室返回完整公开正文并删除占位详情。
+- **验证边界（2026-11-26 历史结果）**：Python `compileall`、全部 JS `node --check`、`backup_mysql.sh` 的 `bash -n`、`git diff --check` 通过；register **历史结果 131 项 pytest 全过**。生产完成 6 个迁移、84 个源码文件上传、Python 3.10.12 编译和基础 HTTP/API/监听/日志验收；idea 43 返回 1128 字完整正文。浏览器连接器不可用，未做真实浏览器验收；当日未触发 CI、未重跑 webapp selftest，完整登录态矩阵与 2FA 异常路径仍待补。
+- **生产禁令**：后台 2FA 完整异常路径验收前不得公网开放；增量更新先 dry-run，再经单独授权执行。已有服务器禁止重跑 register 全量 `deploy.py` 或 webapp `deploy.py`/`install.sh`。
+- **仍未修复（2026-11-26 当日历史状态）**：注册/图形验证码资源与尝试限制、BYOK CGNAT 边界、webapp 初始化脚本与代理 IP、学习分享室键盘/焦点/故障/窄屏交互、发布/评论提交锁、游戏待归档房间过期清理、定时异地备份与恢复演练。**2026-11-27 当前状态**：注册/图形验证码、BYOK 与分享室交互、webapp 初始化与代理补丁均已部署；游戏清理、定时异地备份与恢复演练等仍未完成，详见 §11。不得继续把 2026-11-26 的“未修复”当作当前代码状态。
+
+### 2026-11-27（当前 ADR）：总纲升级完成生产交付
+
+- **背景与范围**：完成总纲既定的分类、搜索、编辑并发、内容治理、个人主页、互动一致性、安全与交互升级，并修复空库 schema 顺序和增量迁移校验。2026-11-26 的 ECS 发布是历史事件，不能作为本轮交付证据。
+- **数据与权限决策**：分类固定为 `ai/edu/bio/energy/math/other`，历史 `mat` 显式迁移为 `math`，未知值先保留 `category_legacy` 再归 `other`；作者生命周期 `status` 与治理 `moderation_state` 分离；作者编辑和治理使用 `row_version`，冲突返回 409；公开读取统一 `published + public + moderation_state='active'`。
+- **治理决策**：一期仅单条撤销/恢复，撤销作者只读、非作者不可见，private 后台不展示标题/正文/标签；审计与状态变更同事务，应用对审计表仅 `SELECT/INSERT`；`request_id + 载荷指纹` 保证同键同载荷幂等、不同载荷冲突。独立 restore/notify/audit 路由、通知人工重试、恢复时 `content_hash` 一致性拒绝仍后置。
+- **个人与并发决策**：登录态 `/profile` 提供“我发布的 / 我的收藏”，身份只取 session，个人响应 `private, no-store`；点赞/收藏/评论/删号共享用户行锁，删号同事务清互动并重算计数，作者仍有 idea 时拒绝删号；公开作者页、命名收藏夹、置顶后置。
+- **安全与迁移决策**：注册验证码采用服务端邮箱/IP/challenge 限流与原子消费；图形验证码增加频率、容量与增量清理；SSRF 拒绝非 global/CGNAT/IPv6，连接使用 IP pin 并保留 Host/SNI/证书校验、禁代理和重定向；空库按基础/idea/tag 优先，增量执行 9 个迁移并精确校验列/索引。
+- **验证与交付边界**：当前 register 全量 **205 passed**、部署专项 **13 passed**，webapp 离线自测 **51 passed / 0 failed**；9 个幂等迁移、隔离生产副本重复演练、代码切换和 53 项生产验收已完成。真实 MySQL 空库、真实浏览器视觉与完整登录态、CI、webapp 空环境安装、72h soak、HTTPS/公网开放与备份恢复演练仍未执行。
+- **未完成与风险**：真实数据库权限/并发/执行计划、邮件与 2FA 异常路径、完整可见性矩阵、浏览器键盘/窄屏、恢复演练均待补。Mochi starter 按 2026-11-19 ADR 保持独立、仅作参考、不整合，不再是产品决策阻塞项。
 
 ---
 
@@ -772,6 +1383,11 @@ D:/MySQL/
 3. ~~初始化 git / CI 首次实跑~~ 已完成：提交已推送 `origin/main`，Actions 总体 Success（run `44507640518`）；依赖审计 job 非阻断失败。
 4. ~~五子棋 AI 陪练~~ **已实现但生产已下线**：简单 / 普通 / 困难三档本地策略；2026-11-25 hi 判定五子棋"没啥用"，**已在生产下线（代码本地保留、可回滚），不再对外提供对战**（见 §12 ADR）。
 5. ~~后续游戏是否本轮实现~~ **已拍板（2026-11-19）：暂缓；2026-11-25 起随五子棋生产下线整体搁置**。中国象棋 / 国际象棋 / UNO 等不再扩张；游戏线待 hi 明确恢复后再按阶段实现。
-6. **研究成果展示页的 MySQL 数据填充**：`/archive` 已部署上线并具备 MySQL 数据通路（`schema_archive.sql` + `archive_data.py` + `/api/archive.json`）；服务器上应用账号 `studentapp` 尚无 `research_achievement` 表读权限、表也未建，API 按设计回退 `source:static`，页面显示静态示例。何时建表、授权并填真实研究资料，需 hi 拍板。**注意：任何数据库凭据只通过环境变量注入，禁止写入代码或文档。**
-7. **idea 数据库建表授权（Phase 1 阻塞项）**：Phase 1 需新增 5 张表（`idea` / `idea_favorite` / `idea_like` / `idea_comment` / `idea_ai_job`），脚本为 `register/schema_idea.sql`（幂等、尚未部署）。服务器上执行建表与授权需要 MySQL 凭据，需 hi 拍板：由 hi 自行执行 SQL，还是明确授权后由协作者通过环境变量注入凭据执行（遵守 §6 凭据不落盘）。**注意：任何数据库凭据只通过环境变量注入，禁止写入代码或文档。**
-8. **idea 的 AI 管理策略**：AI 分类/摘要/去重/推荐另开结构化任务通道（`ideas/ai_tasks.py`），不改动 `/api/chat`（情绪化流式对话）；需 hi 拍板 Key 策略——沿用 BYOK（用户自带）+ 系统 Key 兜底，还是只用系统统一 Key（有配额），并确认配额与降级规则（无 Key / 配额耗尽 / 上游超时时不影响 idea 发布与浏览）。约束：AI 输出只写 `ai_*` 字段、绝不覆盖用户原文，去重只提示不自动删；可复用现有 BYOK 解密与 SSRF 防护（`_base_url_pinned`）。详见方案第 9 节。
+6. ~~**研究成果展示页的 MySQL 数据填充**~~ **已由 Phase 2 决策替代**：学习分享室不再独立维护 `research_achievement` 数据源，改读 `idea` 表 `published+public` 子集，与领域头条同源；2026-11-27 本地追加 `moderation_state='active'`，尚未部署。历史表保留、不删。真实内容通过发布 public idea 进入公开墙。
+7. ~~**idea 数据库建表授权（Phase 1 阻塞项）**~~ **已解除（历史）**：2026-11-25 已建 5 张 Phase 1 表；2026-11-26 标签迁移已部署。2026-11-27 新增 category/moderation/profile 迁移仅本地创建，尚需真实 MySQL 验证与单独授权部署。
+8. **公网化前安全整改（硬前置）**：本轮验证码、SSRF 与后台交互加固已本地实现但未部署；仍须真实邮件、异常 fail-closed、旧 Cookie、会话撤销、真实 MySQL、浏览器、HTTPS 与代理链验收。完成前保持仅 SSH 隧道与安全组 22。
+9. **idea 的 AI 管理策略**：AI 分类/摘要/去重/推荐另开结构化任务通道（`ideas/ai_tasks.py`），不改动 `/api/chat`（情绪化流式对话）；需 hi 拍板 Key 策略——沿用 BYOK（用户自带）+ 系统 Key 兜底，还是只用系统统一 Key（有配额），并确认配额与降级规则（无 Key / 配额耗尽 / 上游超时时不影响 idea 发布与浏览）。约束：AI 输出只写 `ai_*` 字段、绝不覆盖用户原文，去重只提示不自动删；可复用现有 BYOK 解密与 SSRF 防护（`_base_url_pinned`）。详见方案第 9 节。
+10. ~~**idea 编辑与内容治理默认值确认**~~ **已按推荐方案授权实施（2026-11-26）**：独立治理状态、软撤销、作者只读、private 仅元数据、一期单条撤销/恢复；审计与处置同事务，通知失败留痕。**2026-11-27 已本地实现，未部署；真实迁移、并发与浏览器验收待补。** 紧急正文查看、正式申诉与保留期限仍后置。
+11. ~~**个人主页与收藏夹范围确认**~~ **已按一期推荐方案授权实施（2026-11-26）**：登录态 `/profile` 双视图，身份只取 session，权限变化后隐藏收藏但保留关系；公开作者页、命名收藏夹、置顶内容后置。**2026-11-27 已本地实现，未部署。**
+12. ~~**idea 分类标准确认**~~ **已按推荐方案授权实施（2026-11-26，2026-11-27 调整）**：固定 `ai/edu/bio/energy/math/other`，其中 `math` 中文名为“数学”；新建默认 `other`，细分主题走标签；历史 `mat` 显式迁移为 `math`，未知历史分类保留原值后归 `other`，已知中文别名显式映射。**2026-11-27 已本地实现，真实 MySQL 迁移与分布核对尚未执行。**
+13. ~~**idea 昵称搜索交互确认**~~ **已定案并本地实现（2026-11-27）**：复用关键词框，混合匹配标题、正文、标签和当前作者昵称；上限 60 字，不增加“仅按作者搜索”。当前全量 198 passed，仍未部署或真实 MySQL/浏览器验收。

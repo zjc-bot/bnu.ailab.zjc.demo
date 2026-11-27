@@ -43,9 +43,10 @@ def mysql(sql, t=120):
 
 
 print("=== 1. 建表（全部 schema）===")
-# schema.sql 含基础用户表，必须最先；其余按文件名排序保证可重复执行。
+# schema.sql 提供基础用户表；idea/tag 必须先于分类、治理和个人页迁移。
 schemas = sorted(glob.glob(os.path.join(LOCAL, "schema*.sql")))
-schemas.sort(key=lambda p: (os.path.basename(p) != "schema.sql", p))
+priority = {"schema.sql": 0, "schema_idea.sql": 1, "schema_tags.sql": 2}
+schemas.sort(key=lambda p: (priority.get(os.path.basename(p), 3), p))
 if not schemas:
     raise SystemExit("未找到 schema*.sql，终止部署。")
 sftp = c.open_sftp()
@@ -65,9 +66,12 @@ TABLES = [
     "chat_message", "ai_usage", "ai_config", "user_ai_key",
     "friend_request", "friend", "conversation", "message",
     "password_reset", "login_log", "game_record", "game_invite",
+    "idea", "idea_favorite", "idea_like", "idea_comment", "idea_ai_job",
+    "tag_dict", "idea_tag",
 ]
 for t in TABLES:
     mysql(f"GRANT SELECT, INSERT, UPDATE, DELETE ON school.{t} TO 'studentapp'@'127.0.0.1'")
+mysql("GRANT SELECT, INSERT ON school.idea_moderation_log TO 'studentapp'@'127.0.0.1'")
 mysql("FLUSH PRIVILEGES")
 print(mysql("SHOW GRANTS FOR 'studentapp'@'127.0.0.1'"))
 

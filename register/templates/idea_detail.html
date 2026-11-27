@@ -6,7 +6,7 @@
 <meta name="csrf" content="{{ csrf }}">
 <title>{{ idea.title }} · BNU AI Lab</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=11">
-<link rel="stylesheet" href="{{ url_for('static', filename='idea.css') }}?v=2">
+<link rel="stylesheet" href="{{ url_for('static', filename='idea.css') }}?v=5">
 </head>
 <body><a class="skip-link" href="#main">跳到主要内容</a>
 
@@ -23,6 +23,7 @@
       <a href="{{ url_for('home') }}">消息</a>
       <a href="{{ url_for('ideas.ideas_plaza') }}" class="on">idea</a>
       <a href="{{ url_for('archive') }}">学习分享室</a>
+      <a href="{{ url_for('ideas.content_profile') }}">我的主页</a>
       <a href="{{ url_for('profile') }}">账号</a>
     </nav>
     <form method="post" action="{{ url_for('logout') }}">
@@ -33,7 +34,8 @@
 </header>
 
 <main class="wrap-mid" id="main" data-idea-id="{{ idea.id }}">
-  <p class="eyebrow"><a href="{{ url_for('ideas.ideas_plaza') }}">idea 广场</a> / {{ idea.category or '未分类' }}</p>
+  <p class="eyebrow"><a href="{{ url_for('ideas.ideas_plaza') }}">idea 广场</a> / {{ idea.category_label or idea.category or '其他' }}</p>
+  {% if idea.moderation_state != 'active' %}<p class="err" role="status">该 idea 已被撤销，仅可查看{% if idea.moderation_reason %}：{{ idea.moderation_reason }}{% endif %}。</p>{% endif %}
   <article class="idea-detail-card card">
     <h1 class="idea-detail-title">{{ idea.title }}</h1>
     <p class="idea-meta">由 {{ idea.author_nickname or idea.author_id }} 发布 · {{ idea.created_at }}</p>
@@ -50,24 +52,31 @@
     </section>
     {% endif %}
 
+    {% if idea.moderation_state == 'active' %}
     <div class="idea-actions">
       <button class="btn ghost" id="btnFav" type="button" aria-pressed="{{ 'true' if favorited else 'false' }}">{{ '★ 已收藏' if favorited else '☆ 收藏' }}</button>
       <button class="btn ghost" id="btnLike" type="button" aria-pressed="{{ 'true' if liked else 'false' }}">{{ '♥ 已赞' if liked else '♡ 赞' }}</button>
       <span class="idea-counts"><span id="favCount">{{ idea.favorite_count }}</span> 收藏 · <span id="likeCount">{{ idea.like_count }}</span> 赞</span>
       {% if can_edit %}
       <span class="idea-owner-actions">
+        <a class="btn ghost sm2" href="{{ url_for('ideas.idea_edit', idea_id=idea.id) }}">编辑</a>
         <button class="btn danger sm2" id="btnDelete" type="button">删除</button>
       </span>
+      {% elif idea.author_id == session.get('uid') %}
+      <a class="btn ghost sm2" href="{{ url_for('ideas.idea_edit', idea_id=idea.id) }}">查看撤销详情</a>
       {% endif %}
     </div>
+    {% endif %}
   </article>
 
   <section class="idea-comments">
     <h2>讨论 <span class="idea-meta">{{ comments|length }}</span></h2>
+    {% if idea.moderation_state == 'active' %}
     <form id="commentForm" class="idea-comment-form">
       <label class="field"><span>写下你的看法</span><textarea id="commentInput" rows="3" maxlength="2000" required></textarea></label>
       <button class="btn primary" type="submit">发表评论</button>
     </form>
+    {% endif %}
     <div id="commentList" class="comment-list">
       {% for c in comments %}
       <div class="comment"><p class="idea-meta">{{ c.author_nickname or c.user_id }} · {{ c.created_at }}</p><p>{{ c.content }}</p></div>
@@ -79,6 +88,6 @@
 </main>
 
 <div class="toast" id="toast" role="status" hidden></div>
-<script src="{{ url_for('static', filename='idea.js') }}?v=2"></script>
+<script src="{{ url_for('static', filename='idea.js') }}?v=4"></script>
 </body>
 </html>

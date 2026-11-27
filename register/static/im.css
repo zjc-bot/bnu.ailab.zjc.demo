@@ -876,3 +876,61 @@
   .im-stage-pet::before { width: 82px; height: 11px; }
   .st-cloud.c2 { top: 52px; }
 }
+
+/* ==========================================================================
+   边界柔化 — 用一条连续渐变主导场景，装饰层只做极低对比起伏
+   实测旧截图：y=20 delta=31（聊天区 #dbe8f1 反向跳到 #eaf2f7）；亮顶线 delta=70；
+   旧草叶用 linear-gradient(to top) 实际是水平深色带，又造出 delta=56 的硬线。
+   ========================================================================== */
+:root {
+  --stage-sky-top: #dbe8f1;      /* 必须等于 .im-body 渐变末端，才能无缝 */
+  --stage-mid: #d4e3eb;
+  --stage-low: #cddfdc;
+  --stage-base: #bdd3ca;
+  --stage-hill: #c8d9e1;
+  --stage-meadow: #c4d6d2;
+  --stage-grass-dark: #a9c1b5;
+  --stage-grass-light: #d0dfd3;
+  --stage-shadow: rgba(24, 51, 79, .12);
+}
+.im-stage {
+  background: linear-gradient(180deg,
+    var(--stage-sky-top) 0%,
+    var(--stage-mid) 42%,
+    var(--stage-low) 68%,
+    var(--stage-base) 100%);
+}
+/* 装饰层半透明 + 顶部淡入，避免任何一层形成硬色块 */
+.im-stage::before { background: var(--stage-hill); opacity: .26; }
+.im-stage-scene::after { background: var(--stage-hill); opacity: .18; }
+.im-stage-scene::before { background: var(--stage-meadow); opacity: .26; box-shadow: none; }
+.im-stage::before,
+.im-stage-scene::before,
+.im-stage-scene::after,
+.st-ground,
+.im-stage::after {
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 18px);
+  mask-image: linear-gradient(180deg, transparent 0%, #000 18px);
+}
+/* 草叶必须是竖向细线（to right），不再是水平色带；地面本身透明 */
+.st-ground {
+  background: transparent;
+  background-image:
+    linear-gradient(to right, var(--stage-grass-dark) 0 2px, transparent 2px),
+    linear-gradient(to right, var(--stage-grass-light) 0 2px, transparent 2px);
+  background-size: 23px 12px, 37px 12px;
+  background-position: 0 bottom, 13px bottom;
+  background-repeat: repeat-x;
+}
+.im-stage::after {
+  background-color: transparent;
+  background-image:
+    linear-gradient(to right, var(--stage-grass-dark) 0 2px, transparent 2px),
+    linear-gradient(to right, var(--stage-grass-light) 0 2px, transparent 2px);
+  background-size: 41px 14px, 29px 14px;
+  background-position: 7px bottom, 19px bottom;
+  background-repeat: repeat-x;
+  opacity: .55;
+}
+.st-ground::before, .st-ground::after { opacity: .26; }
+.st-cloud { opacity: .8; }

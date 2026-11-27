@@ -9,6 +9,7 @@
   - CSRF / CSP / 安全响应头：与主站保持一致
 """
 
+import heapq
 import hmac
 import io
 import ipaddress
@@ -19,7 +20,9 @@ import re
 import secrets
 import socket
 import sys
+import threading
 import time
+from collections import deque
 from functools import wraps
 from urllib.parse import urlparse, urlunparse
 
@@ -89,7 +92,11 @@ _rate = {}   # key -> [count, first_ts]
 # ---------- 工具 ----------
 
 def _ip():
-    return request.remote_addr or "unknown"
+    raw = request.remote_addr or "unknown"
+    try:
+        return str(ipaddress.ip_address(raw))
+    except ValueError:
+        return raw
 
 
 def _hit(key, limit, window):
@@ -150,12 +157,17 @@ def security_headers(resp):
 
 SKIP_LOG_PREFIX = ("/static/", "/admin", "/favicon.ico")
 SKIP_LOG_EXACT = ("/captcha.png",)
+SKIP_LOG_POLL_GET = (
+    "/api/conversations", "/api/friends", "/api/friends/requests", "/api/messages",
+)
 
 
 def _log_access(status):
     """记录页面访问，用于统计访问人群。失败不影响响应。"""
     p = request.path
     if p.startswith(SKIP_LOG_PREFIX) or p in SKIP_LOG_EXACT:
+        return
+    if request.method == "GET" and p in SKIP_LOG_POLL_GET:
         return
     try:
         with db.connect() as conn:
@@ -219,23 +231,95 @@ def _413(_e):
 # 验证码明文必须留在服务端：Flask 的 session 是「签名但不加密」的 cookie，
 # 客户端可以 base64 解码读出内容。放 session 等于把答案发给用户。
 _captcha_store = {}
+_captcha_expiry = []
+_captcha_ip_issues = {}
+_captcha_ip_expiry = []
+_captcha_global_issues = deque()
+_captcha_reserved = 0
+_captcha_lock = threading.Lock()
 CAPTCHA_TTL = 300
+CAPTCHA_IP_WINDOW = 600
+CAPTCHA_IP_LIMIT = 30
+CAPTCHA_GLOBAL_WINDOW = 60
+CAPTCHA_GLOBAL_LIMIT = 600
+CAPTCHA_MAX_ACTIVE = 5000
 
 
 def _sweep_captcha(now):
-    for k, (_, ts) in list(_captcha_store.items()):
-        if now - ts > CAPTCHA_TTL:
-            _captcha_store.pop(k, None)
+    cutoff = now - CAPTCHA_TTL
+    while _captcha_expiry and _captcha_expiry[0][0] <= cutoff:
+        ts, tok = heapq.heappop(_captcha_expiry)
+        item = _captcha_store.get(tok)
+        if item and item[1] == ts:
+            _captcha_store.pop(tok, None)
+
+    ip_cutoff = now - CAPTCHA_IP_WINDOW
+    while _captcha_ip_expiry and _captcha_ip_expiry[0][0] <= ip_cutoff:
+        _ts, ip = heapq.heappop(_captcha_ip_expiry)
+        issues = _captcha_ip_issues.get(ip)
+        if issues and issues[-1] <= ip_cutoff:
+            _captcha_ip_issues.pop(ip, None)
+
+    global_cutoff = now - CAPTCHA_GLOBAL_WINDOW
+    while _captcha_global_issues and _captcha_global_issues[0] <= global_cutoff:
+        _captcha_global_issues.popleft()
+
+
+def _reserve_captcha(ip):
+    global _captcha_reserved
+    with _captcha_lock:
+        now = time.time()
+        _sweep_captcha(now)
+        issues = _captcha_ip_issues.get(ip)
+        ip_cutoff = now - CAPTCHA_IP_WINDOW
+        if issues:
+            while issues and issues[0] <= ip_cutoff:
+                issues.popleft()
+        if issues and len(issues) >= CAPTCHA_IP_LIMIT:
+            return False
+        if len(_captcha_global_issues) >= CAPTCHA_GLOBAL_LIMIT:
+            return False
+        if len(_captcha_store) + _captcha_reserved >= CAPTCHA_MAX_ACTIVE:
+            return False
+        if issues is None:
+            issues = _captcha_ip_issues[ip] = deque()
+        issues.append(now)
+        heapq.heappush(_captcha_ip_expiry, (now, ip))
+        _captcha_global_issues.append(now)
+        _captcha_reserved += 1
+        return True
+
+
+def _finish_captcha(tok, text, now):
+    global _captcha_reserved
+    with _captcha_lock:
+        _captcha_store[tok] = (text.lower(), now)
+        heapq.heappush(_captcha_expiry, (now, tok))
+        _captcha_reserved -= 1
+
+
+def _cancel_captcha():
+    global _captcha_reserved
+    with _captcha_lock:
+        _captcha_reserved -= 1
 
 
 @app.get("/captcha.png")
 def captcha_png():
-    data, text = captcha.generate()
-    now = time.time()
-    _sweep_captcha(now)
+    if not _reserve_captcha(_ip()):
+        resp = Response("验证码获取过于频繁，请稍后再试", status=429,
+                        mimetype="text/plain; charset=utf-8")
+        resp.headers["Cache-Control"] = "no-store"
+        resp.headers["Retry-After"] = "60"
+        return resp
+    try:
+        data, text = captcha.generate()
+    except Exception:
+        _cancel_captcha()
+        raise
 
     tok = secrets.token_urlsafe(16)
-    _captcha_store[tok] = (text.lower(), now)
+    _finish_captcha(tok, text, time.time())
     session["cap_tok"] = tok
 
     resp = Response(data, mimetype="image/png")
@@ -248,7 +332,8 @@ def _check_captcha(user_input):
     if not tok:
         return False
 
-    item = _captcha_store.pop(tok, None)
+    with _captcha_lock:
+        item = _captcha_store.pop(tok, None)
     if not item:
         return False
 
@@ -421,7 +506,7 @@ def register_step2_submit():
         app.logger.exception("发信失败")
         return fail(f"验证码发送失败：{e}")
 
-    db.save_code(form["email"], code, CODE_TTL, _ip())
+    challenge = db.save_code(form["email"], code, CODE_TTL, _ip())
 
     session["pending"] = {
         "student_no": ident["student_no"],
@@ -429,6 +514,7 @@ def register_step2_submit():
         "nickname": form["nickname"],
         "email": form["email"],
         "pw_hash": generate_password_hash(pwd),
+        "challenge": challenge,
         "ts": int(time.time()),
     }
     return redirect(url_for("verify"))
@@ -467,12 +553,7 @@ def verify_submit():
         session.pop("pending", None)
         return redirect(url_for("register"))
 
-    # 验证码只有 6 位，必须限制尝试次数，否则可被穷举
-    tries = session.get("code_tries", 0)
-    if tries >= 5:
-        session.pop("pending", None)
-        session.pop("code_tries", None)
-        return redirect(url_for("register"))
+    session.pop("code_tries", None)
 
     code = (request.form.get("code") or "").strip()
     if not re.fullmatch(r"\d{6}", code):
@@ -480,12 +561,20 @@ def verify_submit():
                                masked=_mask_email(p["email"]), ttl=CODE_TTL, step=3,
                                err="请输入 6 位数字验证码")
 
-    cid = db.check_code(p["email"], code)
+    try:
+        cid, left, status = db.verify_code(
+            p["email"], code, p.get("challenge"), _ip()
+        )
+    except Exception:
+        app.logger.exception("验证码校验失败")
+        cid, left, status = None, 0, "error"
+
+    if status == "limited":
+        session.pop("pending", None)
+        return redirect(url_for("register"))
     if not cid:
-        session["code_tries"] = tries + 1
-        left = 5 - tries - 1
         msg = "验证码错误或已过期"
-        if left <= 2:
+        if status not in ("busy", "error") and left <= 2:
             msg += f"，还可尝试 {left} 次"
         return render_template("verify.html", csrf=_csrf(), email=p["email"],
                                masked=_mask_email(p["email"]), ttl=CODE_TTL, step=3,
@@ -497,11 +586,14 @@ def verify_submit():
         )
     except Exception:
         app.logger.exception("创建账号失败")
+        try:
+            db.release_code(cid)
+        except Exception:
+            app.logger.exception("归还验证码失败")
         return render_template("verify.html", csrf=_csrf(), email=p["email"],
                                masked=_mask_email(p["email"]), ttl=CODE_TTL, step=3,
                                err="账号创建失败，请稍后重试")
 
-    db.consume_code(cid)
     session.pop("pending", None)
     session.clear()
     session["uid"] = uid
@@ -532,7 +624,9 @@ def resend():
     except mailer.MailError as e:
         return jsonify(error=str(e)), 502
 
-    db.save_code(p["email"], code, CODE_TTL, _ip())
+    challenge = db.save_code(p["email"], code, CODE_TTL, _ip())
+    p["challenge"] = challenge
+    session.modified = True
     return jsonify(ok=True)
 
 
@@ -687,14 +781,20 @@ AI_BASE = os.environ.get("AI_BASE_URL", "https://api.deepseek.com").rstrip("/")
 # SSRF 防护：用户自填的 base_url 必须是公网 https 地址。
 # 关键点（DNS 重绑定修复）：校验阶段解析出的 IP 会被"钉住"，请求阶段直接连这个 IP，
 # 不再让 requests/urllib3 二次解析域名 —— 这样"校验公网、连接内网"的 TOCTOU 窗口消失。
+_CGNAT_NETWORK = ipaddress.ip_network("100.64.0.0/10")
+
+
 def _bad_ip(ip_text):
-    """IP 是否落在私网/环回/链路本地/保留段（这些地址一律不允许作为上游）。"""
+    """只允许 global 地址；CGNAT 与内嵌 IPv4 的 IPv6 也必须过公网判定。"""
     try:
         ip = ipaddress.ip_address(ip_text)
     except ValueError:
         return True
-    return (ip.is_private or ip.is_loopback or ip.is_link_local
-            or ip.is_reserved or ip.is_multicast or ip.is_unspecified)
+    if not ip.is_global or ip.is_multicast or ip in _CGNAT_NETWORK:
+        return True
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+        return _bad_ip(str(ip.ipv4_mapped))
+    return False
 
 
 class _PinnedHTTPSAdapter(HTTPAdapter):
@@ -726,7 +826,10 @@ def _base_url_pinned(url):
         return False, "Base URL 必须使用 https", []
     if not p.hostname or p.username or p.password or p.query or p.fragment:
         return False, "Base URL 含有非法组成部分", []
-    host = p.hostname.lower().rstrip(".")
+    try:
+        host = p.hostname.lower().rstrip(".").encode("idna").decode("ascii")
+    except UnicodeError:
+        return False, "Base URL 主机名不合法", []
     if host == "localhost" or host.endswith(".local") or host.endswith(".internal"):
         return False, "不允许使用本地地址", []
 
@@ -782,19 +885,21 @@ def _pinned_post(url, pinned_ips, **kwargs):
     host = p.hostname
     port = p.port or 443
     headers = dict(kwargs.pop("headers", {}) or {})
-    headers.setdefault("Host", host if port == 443 else f"{host}:{port}")
+    host_header = f"[{host}]" if ":" in host else host
+    headers.setdefault("Host", host_header if port == 443 else f"{host_header}:{port}")
     kwargs["headers"] = headers
     kwargs["allow_redirects"] = False
     errors = []
     for ip in pinned_ips:
         try:
+            ip_literal = f"[{ip}]" if ":" in ip else ip
             pinned = urlunparse(
-                (p.scheme, f"{ip}:{port}" if port != 443 else ip,
-                 p.path, p.params, p.query, p.fragment)
+                (p.scheme, f"{ip_literal}:{port}", p.path, p.params, p.query, p.fragment)
             )
-            s = requests.Session()
-            s.mount("https://", _PinnedHTTPSAdapter(host))
-            return s.post(pinned, **kwargs)
+            with requests.Session() as s:
+                s.trust_env = False
+                s.mount("https://", _PinnedHTTPSAdapter(host))
+                return s.post(pinned, **kwargs)
         except requests.RequestException as e:
             errors.append(e)
     if errors:
@@ -1138,7 +1243,6 @@ def api_user_search():
         "id": u["id"],
         "student_no": u["student_no"],
         "nickname": u["nickname"],
-        "real_name": u["real_name"],
         "is_friend": db.is_friend(session["uid"], u["id"]),
     })
 

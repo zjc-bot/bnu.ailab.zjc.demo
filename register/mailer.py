@@ -13,59 +13,46 @@ SMTP_USER = os.environ.get("SMTP_USER", "")
 SMTP_PASS = os.environ.get("SMTP_PASS", "")
 FROM_NAME = os.environ.get("SMTP_FROM_NAME", "BNU AI Lab")
 
-TEXT_TPL = """BNU AI Lab 注册验证码
-
-    验证码：{code}
-
-    有效期 {ttl} 分钟。如果不是你本人操作，请忽略本邮件。
-
-—— 本邮件由系统自动发出，请勿直接回复
-"""
-
-HTML_TPL = """<!DOCTYPE html>
-<html><body style="margin:0;padding:0;background:#f5f6f8;
-  font-family:-apple-system,'Microsoft YaHei',sans-serif;">
-  <div style="max-width:480px;margin:32px auto;background:#fff;border-radius:12px;
-    border:1px solid #e5e7eb;overflow:hidden;">
-    <div style="background:#2563eb;padding:18px 24px;">
-      <span style="color:#fff;font-size:15px;font-weight:600;">BNU AI Lab</span>
-    </div>
-    <div style="padding:24px;">
-      <p style="margin:0 0 16px;color:#111827;font-size:14px;">你的注册验证码：</p>
-      <div style="background:#f3f4f6;border-radius:8px;padding:16px;text-align:center;
-        font-size:28px;letter-spacing:6px;font-weight:600;color:#2563eb;
-        font-family:Consolas,monospace;">{code}</div>
-      <p style="margin:16px 0 0;color:#6b7280;font-size:13px;">
-        有效期 {ttl} 分钟，仅可使用一次。</p>
-      <p style="margin:8px 0 0;color:#9ca3af;font-size:12px;">
-        如果不是你本人操作，请忽略本邮件，你的邮箱不会被注册。</p>
-    </div>
-    <div style="padding:14px 24px;border-top:1px solid #f1f2f4;color:#9ca3af;
-      font-size:11px;">本邮件由系统自动发出，请勿直接回复</div>
-  </div>
-</body></html>
-"""
-
-
 class MailError(Exception):
     pass
 
 
-def send_code(to_email, code, ttl_minutes=5):
+def send_code(to_email, code, ttl_minutes=5, purpose="register"):
     if not SMTP_USER or not SMTP_PASS:
         raise MailError("SMTP 未配置（SMTP_USER / SMTP_PASS 为空）")
 
+    if purpose == "admin":
+        heading, label, note = "管理后台登录验证码", "管理后台二次验证码：", "如果不是你本人操作，请立即检查账号安全。"
+    elif purpose == "email":
+        heading, label, note = "管理后台邮箱确认", "确认新邮箱的验证码：", "确认前，原二次认证邮箱不会改变。"
+    else:
+        heading, label, note = "注册验证码", "你的注册验证码：", "如果不是你本人操作，请忽略本邮件，你的邮箱不会被注册。"
+    text = f"""BNU AI Lab {heading}
+
+    {label}{code}
+
+    有效期 {ttl} 分钟，仅可使用一次。{note}
+
+—— 本邮件由系统自动发出，请勿直接回复
+"""
+    body = (
+        f'<p style="margin:0 0 16px;color:#111827;font-size:14px;">{label}</p>'
+        f'<div style="background:#f3f4f6;border-radius:8px;padding:16px;text-align:center;'
+        f'font-size:28px;letter-spacing:6px;font-weight:600;color:#2563eb;'
+        f'font-family:Consolas,monospace;">{code}</div>'
+        f'<p style="margin:16px 0 0;color:#6b7280;font-size:13px;">有效期 {ttl} 分钟，仅可使用一次。</p>'
+        f'<p style="margin:8px 0 0;color:#9ca3af;font-size:12px;">{note}</p>'
+    )
+
     msg = EmailMessage()
-    msg["Subject"] = f"【BNU AI Lab】注册验证码 {code}"
+    msg["Subject"] = f"【BNU AI Lab】{heading} {code}"
     msg["From"] = formataddr((FROM_NAME, SMTP_USER))
     msg["To"] = to_email
     msg["Date"] = formatdate(localtime=True)
     msg["Message-ID"] = make_msgid(domain=SMTP_USER.split("@")[-1])
 
-    msg.set_content(TEXT_TPL.format(code=code, ttl=ttl_minutes))
-    msg.add_alternative(
-        HTML_TPL.format(code=code, ttl=ttl_minutes), subtype="html"
-    )
+    msg.set_content(text)
+    msg.add_alternative(_wrap("", body), subtype="html")
 
     ctx = ssl.create_default_context()
     try:

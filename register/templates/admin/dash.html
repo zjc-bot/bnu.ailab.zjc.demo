@@ -20,6 +20,7 @@
     <nav class="admin-nav">
       <a href="{{ url_for('admin.dash') }}" class="on">仪表盘</a>
       <a href="{{ url_for('admin.users') }}">成员</a>
+      <a href="{{ url_for('admin.ideas') }}">内容治理</a>
       <a href="{{ url_for('admin.logs') }}">访问日志</a>
       <a href="{{ url_for('admin.account') }}">账号</a>
     </nav>
@@ -31,6 +32,10 @@
 </header>
 
 <main class="wrap-wide">
+
+  {% if twofa_missing %}
+  <div class="err">安全提示：当前管理员尚未设置二次认证邮箱，后台仅靠密码保护。请在「账号」页补配。</div>
+  {% endif %}
 
   <div class="range-bar">
     <div class="range-presets">

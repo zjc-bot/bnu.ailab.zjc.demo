@@ -13,6 +13,12 @@ DIFFICULTIES = {"easy", "normal", "hard"}
 WIN_SCORE = 100_000_000
 _DIRECTIONS = ((1, 0), (0, 1), (1, 1), (1, -1))
 
+# 搜索节点上限：困难档在残局候选点很多时，展开数会显著膨胀。
+# 单 worker 下 AI 是同步计算，节点数无上限会让一次落子长时间占用线程，
+# 拖慢同进程内的其他请求。预算用尽时退化为中性评估，棋力略降但耗时有界。
+# 这是确定性的算法级截断，不依赖超时（Python 线程无法真正取消）。
+NODE_BUDGET = {"easy": 0, "normal": 600, "hard": 1800}
+
 
 def choose_move(state, difficulty="normal", player=gomoku.P2, rng=None):
     """返回一个合法着法；没有可下位置时返回 None。"""
@@ -44,13 +50,14 @@ def choose_move(state, difficulty="normal", player=gomoku.P2, rng=None):
         return _coord(rng.choice(ordered[:min(6, len(ordered))]))
 
     depth, width = (2, 8) if difficulty == "normal" else (3, 10)
+    budget = [NODE_BUDGET[difficulty]]
     best_value = -WIN_SCORE * 2
     best = []
     for x, y in ordered[:width]:
         new_board = _play(board, x, y, player)
         value = _alpha_beta(
             new_board, depth - 1, opponent, player,
-            -WIN_SCORE * 2, WIN_SCORE * 2, width,
+            -WIN_SCORE * 2, WIN_SCORE * 2, width, budget,
         )
         if value > best_value:
             best_value = value
@@ -60,7 +67,12 @@ def choose_move(state, difficulty="normal", player=gomoku.P2, rng=None):
     return {"x": best[0][0], "y": best[0][1]} if len(best) == 1 else _coord(rng.choice(best))
 
 
-def _alpha_beta(board, depth, turn, root, alpha, beta, width):
+def _alpha_beta(board, depth, turn, root, alpha, beta, width, budget=None):
+    """有界 Minimax。budget 为单元素计数器，耗尽时返回中性评估而非继续展开。"""
+    if budget is not None:
+        if budget[0] <= 0:
+            return 0
+        budget[0] -= 1
     opponent = gomoku.P1 if turn == gomoku.P2 else gomoku.P2
     cells = _candidate_cells(board, radius=2)
     if not cells:
@@ -75,7 +87,9 @@ def _alpha_beta(board, depth, turn, root, alpha, beta, width):
         elif depth <= 1:
             value = _evaluate(new_board, root)
         else:
-            value = _alpha_beta(new_board, depth - 1, opponent, root, alpha, beta, width)
+            value = _alpha_beta(
+                new_board, depth - 1, opponent, root, alpha, beta, width, budget,
+            )
         if maximizing:
             best = max(best, value)
             alpha = max(alpha, best)

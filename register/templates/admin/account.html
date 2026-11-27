@@ -40,6 +40,29 @@
   {% if ok %}<div class="ok-msg">{{ ok }}</div>{% endif %}
   {% if err %}<div class="err">{{ err }}</div>{% endif %}
 
+  {% if not me.email %}
+  <div class="err">尚未设置二次认证邮箱，后台登录会被拒绝。请先通过受信任的数据库运维流程配置邮箱。</div>
+  {% endif %}
+
+  <div class="panel">
+    <h2>二次认证邮箱</h2>
+    <p class="hint">提交后需到新邮箱输入 6 位确认码；确认完成前旧邮箱保持不变。</p>
+    <form method="post" action="{{ url_for('admin.account_email') }}" autocomplete="off">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label class="field">
+        <span>接收验证码的邮箱</span>
+        <input name="email" type="email" required maxlength="191"
+               value="{{ me.email or '' }}" placeholder="name@mail.bnu.edu.cn">
+      </label>
+      <label class="field">
+        <span>当前密码 <span class="req">*</span></span>
+        <input name="password" type="password" required maxlength="64"
+               placeholder="修改邮箱需验证密码">
+      </label>
+      <button class="btn primary" type="submit">发送邮箱确认邮件</button>
+    </form>
+  </div>
+
   <div class="panel">
     <h2>当前账号</h2>
     <dl class="info-list">

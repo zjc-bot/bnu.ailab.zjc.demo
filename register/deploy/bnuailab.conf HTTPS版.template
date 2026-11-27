@@ -1,0 +1,105 @@
+# BNU AI Lab 注册系统 · 域名反代（HTTPS 版 · 公网化启用）
+# 放置：/www/server/panel/vhost/nginx/bnuailab.conf
+#
+# 启用前置条件（缺一不可）：
+#   1. 已为 bnuailab.tech / www.bnuailab.tech 签发证书
+#   2. 阿里云安全组已放行 80/443（建议先限源 IP 灰度）
+#   3. 应用已完成 SSRF pin IP 修复与 admin 二次认证
+#   4. .env 设置 COOKIE_SECURE=1 且 SITE_URL=https://bnuailab.tech
+#
+# 与 student-web.conf 共存：本文件用 server_name 精确匹配，不影响默认站点。
+#
+# 推荐证书来源：acme.sh + dns_ali（路线 B，详见 _ref/公网化整改操作手册.md）
+#   ~/.acme.sh/acme.sh --install-cert -d bnuailab.tech --ecc \
+#     --key-file /etc/nginx/ssl/bnuailab.tech/privkey.pem \
+#     --fullchain-file /etc/nginx/ssl/bnuailab.tech/fullchain.pem \
+#     --reloadcmd "/etc/init.d/nginx reload"
+#   这样证书路径固定，续期后自动覆盖 + 自动 reload，本文件永远不用改。
+#   宝塔环境实测：用 /etc/init.d/nginx reload，别单独敲 nginx（会尝试启动第二个主进程）。
+# 若用 certbot，把下面两行改回 /etc/letsencrypt/live/bnuailab.tech/ 即可。
+
+# HTTP 全部跳转 HTTPS
+server {
+    listen 80;
+    server_name bnuailab.tech www.bnuailab.tech;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    # 用 listen ... http2（兼容旧版 nginx）；若 nginx >= 1.25.1 且报 deprecation
+    # 警告可忽略，或改为 `listen 443 ssl;` + 单独一行 `http2 on;`
+    listen 443 ssl http2;
+    server_name bnuailab.tech www.bnuailab.tech;
+
+    # 证书路径：默认对应路线 B（acme.sh --install-cert 的固定输出路径）
+    # 若用 certbot，改为 /etc/letsencrypt/live/bnuailab.tech/{fullchain,privkey}.pem
+    ssl_certificate     /etc/nginx/ssl/bnuailab.tech/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/bnuailab.tech/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+
+    # HSTS 首月先不启用：一旦生效浏览器一年内强制 HTTPS，证书出问题时无法临时回退
+    # add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    server_tokens off;
+    client_max_body_size 6m;
+
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options DENY always;
+    add_header Referrer-Policy no-referrer always;
+
+    access_log /www/wwwlogs/bnuailab.log;
+    error_log  /www/wwwlogs/bnuailab-error.log;
+
+    # Socket.IO：Upgrade 头必须开，否则对战退化为长轮询
+    location /socket.io/ {
+        proxy_pass http://127.0.0.1:8081;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        # 覆盖而非追加：ProxyFix(x_for=1) 依此取真实客户端 IP
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    # 静态资源：不缓存，避免改了 JS 浏览器仍跑旧版
+    location /static/ {
+        proxy_pass http://127.0.0.1:8081;
+        proxy_set_header Host $host;
+        add_header Cache-Control "no-store, no-cache, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+    }
+
+    # 头像：URL 带随机串，可长缓存
+    location /avatar/ {
+        proxy_pass http://127.0.0.1:8081;
+        proxy_set_header Host $host;
+        add_header Cache-Control "public, max-age=86400" always;
+    }
+
+    location / {
+        # 连接限流需在主 nginx.conf 的 http{} 中先定义 limit_conn_zone，
+        # 宝塔默认配置未必有 → 未定义会直接让 nginx -t 失败。确认后再启用：
+        # limit_conn perip 20;
+        # limit_conn_status 429;
+        proxy_pass http://127.0.0.1:8081;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        # 关键：覆盖而非追加。若前面加 CDN/SLB，此处会取到代理 IP，
+        # 导致 admin 白名单与登录限流静默失效 —— 加 CDN 前必须重审此链。
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+        proxy_hide_header X-Powered-By;
+    }
+
+    location ~ /\. {
+        deny all;
+    }
+}

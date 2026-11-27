@@ -57,3 +57,36 @@ def test_hard_move_is_legal():
 def test_unknown_difficulty_rejected():
     with pytest.raises(ValueError, match="未知 AI 难度"):
         choose_move(empty_state(), "impossible", gomoku.P2)
+
+
+def test_search_budget_is_bounded():
+    """节点预算耗尽时立即返回中性评估，不再继续展开（耗时有界）。"""
+    from games.ai import gomoku as ai_gomoku
+
+    assert ai_gomoku.NODE_BUDGET["hard"] > ai_gomoku.NODE_BUDGET["normal"] > 0
+    state = empty_state()
+    state["board"][7][7] = gomoku.P1
+    budget = [0]
+    value = ai_gomoku._alpha_beta(
+        state["board"], 3, gomoku.P2, gomoku.P2,
+        -ai_gomoku.WIN_SCORE * 2, ai_gomoku.WIN_SCORE * 2, 10, budget,
+    )
+    assert value == 0
+    assert budget == [0], "预算耗尽时不应再消费或展开节点"
+
+
+def test_search_budget_consumes_nodes():
+    """正常搜索会消费预算，且返回的着法仍合法。"""
+    from games.ai import gomoku as ai_gomoku
+
+    state = empty_state()
+    for x, y in ((7, 7), (7, 8), (8, 7)):
+        state["board"][y][x] = gomoku.P1
+    budget = [ai_gomoku.NODE_BUDGET["hard"]]
+    ai_gomoku._alpha_beta(
+        state["board"], 2, gomoku.P2, gomoku.P2,
+        -ai_gomoku.WIN_SCORE * 2, ai_gomoku.WIN_SCORE * 2, 10, budget,
+    )
+    assert budget[0] < ai_gomoku.NODE_BUDGET["hard"]
+    move = choose_move(state, "hard", gomoku.P2, rng=random.Random(9))
+    assert state["board"][move["y"]][move["x"]] == gomoku.EMPTY

@@ -3,7 +3,7 @@
 设计原则：
   1. 与 ideas/store.py 一致：import db; db.connect()，复用同一份 DB_* 配置，
      消除自实现 _config() 带来的配置漂移与误连风险；
-  2. 公开口径硬编码在 SQL（status='published' AND visibility='public'），
+  2. 公开口径硬编码在 SQL（status='published' AND visibility='public' AND moderation_state='active'），
      不带 viewer_id，从结构上杜绝 friends/private 泄漏；
   3. 所有 SQL 都是静态常量字符串：过滤值为硬编码枚举常量、无外部输入，
      因此没有任何字符串拼接 / f-string，天然免疫注入；
@@ -13,9 +13,9 @@
 """
 
 import logging
-from collections import Counter
 
 import db  # 与注册系统共用同一份 DB_* 配置与连接工厂
+from ideas.constants import CATEGORY_LABELS
 
 log = logging.getLogger(__name__)
 
@@ -38,23 +38,34 @@ _GEOMETRY = (
 _ITEMS_SQL = (
     "SELECT i.id, i.title, i.content, i.category, i.tags, "
     "i.like_count, i.favorite_count, i.comment_count, i.created_at "
-    "FROM idea i WHERE i.status='published' AND i.visibility='public' "
+    "FROM idea i WHERE i.status='published' AND i.visibility='public' AND moderation_state='active' AND i.moderation_state='active' "
     "ORDER BY i.id DESC LIMIT 24"
 )
 
-# 标签聚合数据源：同一公开范围内的 idea.tags 逗号串（不 LIMIT，覆盖全部）。
+# 标签聚合以启用中的关联表为准，覆盖全部公开 idea，不取纸片 LIMIT。
 _TAGS_SQL = (
-    "SELECT i.tags FROM idea i "
-    "WHERE i.status='published' AND i.visibility='public'"
+    "SELECT d.name, d.pinned, COUNT(*) AS use_count, MAX(i.created_at) AS last_used "
+    "FROM tag_dict d JOIN idea_tag it ON it.tag_id=d.id "
+    "JOIN idea i ON i.id=it.idea_id "
+    "WHERE d.status='active' AND i.status='published' AND i.visibility='public' AND moderation_state='active' AND i.moderation_state='active' "
+    "GROUP BY d.id, d.name, d.pinned "
+    "ORDER BY d.pinned DESC, use_count DESC, last_used DESC, d.name ASC LIMIT 9"
 )
 
-# stats 五项：全部由 SQL 实时计算，过滤值为硬编码常量。
+# stats：idea 与讨论统计同样只覆盖公开页可见范围。
 _STATS_SQL = (
     ("已参加人数", "SELECT COUNT(*) AS v FROM app_user WHERE status='active'"),
-    ("平台内发布的总 idea 数", "SELECT COUNT(*) AS v FROM idea WHERE status='published'"),
-    ("累计点赞", "SELECT COALESCE(SUM(like_count),0) AS v FROM idea WHERE status='published'"),
-    ("累计收藏", "SELECT COALESCE(SUM(favorite_count),0) AS v FROM idea WHERE status='published'"),
-    ("讨论数", "SELECT COUNT(*) AS v FROM idea_comment"),
+    ("平台内发布的总 idea 数",
+     "SELECT COUNT(*) AS v FROM idea WHERE status='published' AND visibility='public' AND moderation_state='active'"),
+    ("累计点赞",
+     "SELECT COALESCE(SUM(like_count),0) AS v FROM idea "
+     "WHERE status='published' AND visibility='public' AND moderation_state='active'"),
+    ("累计收藏",
+     "SELECT COALESCE(SUM(favorite_count),0) AS v FROM idea "
+     "WHERE status='published' AND visibility='public' AND moderation_state='active'"),
+    ("讨论数",
+     "SELECT COUNT(*) AS v FROM idea_comment c JOIN idea i ON i.id=c.idea_id "
+     "WHERE i.status='published' AND i.visibility='public' AND moderation_state='active'"),
 )
 
 
@@ -112,10 +123,12 @@ def _to_item(row, index):
         "id": row.get("id"),
         "code": _code(row.get("id")),
         "cat": row.get("category"),
+        "catLabel": CATEGORY_LABELS.get(row.get("category"), row.get("category") or "其他"),
         "kind": _KINDS[index % len(_KINDS)],
         "title": row.get("title"),
         "year": _year(row.get("created_at")),
         "summary": _summary(row.get("content")),
+        "content": row.get("content") or "",
         "tags": _tags(row.get("tags")),
         "owner": "社区成员",
         "metric": str(like_count),
@@ -138,15 +151,12 @@ def _to_item(row, index):
 
 
 def _build_tags(rows):
-    """聚合公开范围内的 idea.tags：次数 DESC、名称 ASC，取前 9 + 「全部」= ≤10。"""
-    counter = Counter()
-    for row in rows:
-        counter.update(_tags(row.get("tags")))
-    ordered = sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))
+    """SQL 已按置顶、使用数、最近使用排序，最多返回 9 个标签。"""
     tags = [{"id": "all", "label": "全部"}]
-    for name, _count in ordered[:9]:
-        # id 用标签名本身，前端按 id 过滤 cat/tags。
-        tags.append({"id": name, "label": name})
+    for row in rows:
+        name = row.get("name")
+        if name:
+            tags.append({"id": name, "label": name})
     return tags[:10]
 
 

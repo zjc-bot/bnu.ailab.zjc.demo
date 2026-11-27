@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>内容治理 · BNU AI Lab</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=11">
+</head>
+<body>
+<header class="topbar"><div class="topbar-left"><div class="mark">B</div><div><h1>管理后台</h1><p class="sub">内容治理 · {{ aname }}</p></div></div>
+<div class="topbar-right"><nav class="admin-nav"><a href="{{ url_for('admin.dash') }}">仪表盘</a><a href="{{ url_for('admin.users') }}">成员</a><a class="on" href="{{ url_for('admin.ideas') }}">内容治理</a><a href="{{ url_for('admin.account') }}">账号</a></nav>
+<form method="post" action="{{ url_for('admin.logout') }}"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn ghost sm2" type="submit">退出</button></form></div></header>
+<main class="wrap-wide" id="main">
+  {% if request.args.get('e') %}<p class="err" role="alert">{{ request.args.get('e') }}</p>{% endif %}
+  {% if request.args.get('ok') %}<p class="idea-meta" role="status">{{ request.args.get('ok') }}</p>{% endif %}
+  <div class="page-head"><p class="eyebrow">Moderation</p><h1>idea 内容治理</h1><p>撤销与恢复均保留正文和互动，并写入不可变审计。私密内容仅展示元数据。</p></div>
+  <form class="range-bar" method="get" action="{{ url_for('admin.ideas') }}">
+    <input type="search" name="q" maxlength="60" value="{{ q }}" placeholder="标题或作者昵称" aria-label="搜索标题或作者昵称">
+    <select name="state" aria-label="治理状态"><option value="">全部状态</option><option value="active" {% if state == 'active' %}selected{% endif %}>正常</option><option value="revoked" {% if state == 'revoked' %}selected{% endif %}>已撤销</option></select>
+    <button class="btn primary sm2" type="submit">筛选</button><span class="range-hint">共 {{ total }} 条</span>
+  </form>
+  <div class="panel"><div class="table-wrap"><table class="data-table"><thead><tr><th>ID</th><th>标题</th><th>作者</th><th>状态 / 可见性</th><th>治理</th><th>最近处置</th></tr></thead><tbody>
+  {% for i in items %}<tr><td>{{ i.id }}</td><td><a href="{{ url_for('admin.idea_detail', idea_id=i.id) }}">{{ i.title }}</a></td><td>{{ i.author_nickname or i.author_id }}</td><td>{{ i.status }} / {{ i.visibility }}</td><td>{% if i.moderation_state == 'revoked' %}<strong class="danger-text">已撤销</strong><br>{{ i.moderation_reason }}{% else %}正常{% endif %}</td><td>{{ i.moderated_at or '—' }}</td></tr>{% else %}<tr><td colspan="6" class="empty-row">没有符合条件的 idea。</td></tr>{% endfor %}
+  </tbody></table></div></div>
+  {% if total > items|length %}<div class="idea-more"><a class="btn ghost" href="{{ url_for('admin.ideas', q=q, state=state, page=page+1) }}">下一页</a></div>{% endif %}
+</main>
+</body></html>

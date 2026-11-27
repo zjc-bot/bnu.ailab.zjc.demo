@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>idea 治理详情 · BNU AI Lab</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=11">
+</head>
+<body>
+<header class="topbar"><div class="topbar-left"><div class="mark">B</div><div><h1>管理后台</h1><p class="sub">内容治理 · {{ aname }}</p></div></div>
+<div class="topbar-right"><nav class="admin-nav"><a href="{{ url_for('admin.dash') }}">仪表盘</a><a href="{{ url_for('admin.users') }}">成员</a><a class="on" href="{{ url_for('admin.ideas') }}">内容治理</a><a href="{{ url_for('admin.account') }}">账号</a></nav>
+<form method="post" action="{{ url_for('admin.logout') }}"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn ghost sm2" type="submit">退出</button></form></div></header>
+<main class="wrap-mid" id="main">
+  <p><a href="{{ url_for('admin.ideas') }}">← 返回内容治理</a></p>
+  {% if request.args.get('e') %}<p class="err" role="alert">{{ request.args.get('e') }}</p>{% endif %}
+  {% if request.args.get('ok') %}<p class="idea-meta" role="status">{{ request.args.get('ok') }}</p>{% endif %}
+  <section class="panel"><p class="eyebrow">Idea #{{ item.id }} · 版本 {{ item.row_version }}</p><h1>{{ item.title }}</h1>
+    <dl class="meta-grid"><dt>作者</dt><dd>{{ item.author_nickname or item.author_id }} · {{ item.author_email or '邮箱缺失' }}</dd><dt>分类</dt><dd>{{ item.category }}</dd><dt>状态 / 可见性</dt><dd>{{ item.status }} / {{ item.visibility }}</dd><dt>治理</dt><dd>{% if item.moderation_state == 'revoked' %}<strong class="danger-text">已撤销</strong>：{{ item.moderation_reason }}{% else %}正常{% endif %}</dd><dt>标签</dt><dd>{{ item.tags or '—' }}</dd></dl>
+    {% if content is not none %}<h2>正文（本次查看已审计）</h2><div class="moderation-content">{{ content }}</div>{% else %}<p class="range-hint">private 内容仅展示元数据，不读取正文。</p>{% endif %}
+  </section>
+  <section class="panel"><h2>单条处置</h2><p class="range-hint">撤销后作者只读，其他用户不可见；恢复后按原状态与可见性重新进入公开投影。所有操作均记录审计。</p>
+    <form method="post" action="{{ url_for('admin.idea_moderate', idea_id=item.id) }}" data-confirm="确认执行该处置？此操作会立即影响内容可见性。">
+      <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="row_version" value="{{ item.row_version }}"><input type="hidden" name="request_id" value="">
+      <label class="field"><span>动作</span><select name="action">{% if item.moderation_state == 'active' %}<option value="revoke">撤销</option>{% else %}<option value="restore">恢复</option>{% endif %}</select></label>
+      <label class="field"><span>原因分类</span><select name="reason_code">{% for code in reason_codes %}<option value="{{ code }}">{{ code }}</option>{% endfor %}</select></label>
+      <label class="field"><span>作者可见原因</span><textarea name="reason_text" rows="3" maxlength="500" required placeholder="说明处置原因与后续出口"></textarea></label>
+      <label class="field"><span>内部备注（仅后台审计可见）</span><textarea name="internal_note" rows="3" maxlength="1000"></textarea></label>
+      <button class="btn danger" type="submit">确认执行</button>
+    </form>
+  </section>
+  <section class="panel"><h2>审计记录</h2><div class="table-wrap"><table class="data-table"><thead><tr><th>时间</th><th>动作</th><th>管理员</th><th>版本</th><th>原因</th></tr></thead><tbody>
+  {% for a in audit %}<tr><td>{{ a.created_at }}</td><td>{{ a.action }}</td><td>{{ a.admin_name_snapshot }}</td><td>{{ a.before_version or '—' }} → {{ a.after_version or '—' }}</td><td>{{ a.reason_text or a.internal_note or '—' }}</td></tr>{% else %}<tr><td colspan="5" class="empty-row">暂无审计。</td></tr>{% endfor %}
+  </tbody></table></div></section>
+</main>
+<script>
+document.querySelector('input[name="request_id"]').value = crypto.randomUUID();
+document.querySelectorAll('form[data-confirm]').forEach(function(f){f.onsubmit=function(e){if(!confirm(f.dataset.confirm))e.preventDefault();};});
+</script>
+</body></html>

@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}?v=1">
+<meta name="csrf" content="{{ csrf }}">
+<title>我的主页 · BNU AI Lab</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=11">
+<link rel="stylesheet" href="{{ url_for('static', filename='idea.css') }}?v=5">
+</head>
+<body><a class="skip-link" href="#main">跳到主要内容</a>
+<header class="topbar">
+  <div class="topbar-left"><div class="mark">B</div><div><h1>BNU AI Lab</h1><p class="sub">我的主页</p></div></div>
+  <div class="topbar-right"><nav class="admin-nav" aria-label="主导航">
+    <a href="{{ url_for('home') }}">消息</a><a href="{{ url_for('ideas.ideas_plaza') }}">idea</a>
+    <a href="{{ url_for('archive') }}">学习分享室</a><a class="on" href="{{ url_for('ideas.content_profile') }}">我的主页</a><a href="{{ url_for('profile') }}">账号</a>
+  </nav><form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn ghost sm2" type="submit">退出</button></form></div>
+</header>
+<main class="wrap-wide" id="main" data-initial-view="{{ initial_view }}">
+  <div class="page-head idea-head"><p class="eyebrow">My space</p><h1>我的 idea 与收藏</h1><p>这里只展示你自己可见的内容；权限变化后，不可见收藏会自动隐藏，关系仍保留。</p><a class="btn primary" href="{{ url_for('ideas.idea_new') }}">＋ 发布 idea</a></div>
+  <section class="profile-summary" aria-label="内容统计">
+    <div><strong id="sPublished">0</strong><span>已发布</span></div><div><strong id="sDraft">0</strong><span>草稿</span></div>
+    <div><strong id="sArchived">0</strong><span>已归档</span></div><div><strong id="sLikes">0</strong><span>收到点赞</span></div>
+    <div><strong id="sFavorites">0</strong><span>收到收藏</span></div><div><strong id="sComments">0</strong><span>讨论</span></div>
+  </section>
+  <div class="profile-tabs" role="tablist" aria-label="个人内容视图">
+    <button id="tabOwned" type="button" role="tab" aria-selected="true" aria-controls="panelOwned">我发布的</button>
+    <button id="tabFavorites" type="button" role="tab" aria-selected="false" aria-controls="panelFavorites" tabindex="-1">我的收藏 <span id="favTotal">0</span></button>
+  </div>
+  <section id="panelOwned" role="tabpanel" aria-labelledby="tabOwned">
+    <div class="idea-filters">
+      <label class="field"><span>状态</span><select id="ownedStatus"><option value="">全部</option><option value="published">已发布</option><option value="draft">草稿</option><option value="archived">已归档</option></select></label>
+      <label class="field"><span>排序</span><select id="ownedSort"><option value="updated">最近更新</option><option value="hot">最多点赞</option></select></label>
+    </div>
+    <div id="ownedList" class="idea-grid" aria-live="polite"></div>
+  </section>
+  <section id="panelFavorites" role="tabpanel" aria-labelledby="tabFavorites" hidden>
+    <div class="idea-filters"><label class="field"><span>排序</span><select id="favSort"><option value="new">最近收藏</option><option value="hot">最多点赞</option></select></label></div>
+    <p id="unavailable" class="idea-meta" hidden></p><div id="favoriteList" class="idea-grid profile-favorite" aria-live="polite"></div>
+  </section>
+  <div class="idea-filters"><label class="field"><span>关键词</span><input id="profileQ" type="text" maxlength="60" placeholder="搜索标题、正文或标签"></label><label class="field"><span>分类</span><select id="profileCategory"><option value="">全部</option></select></label><label class="field"><span>标签</span><input id="profileTag" type="text" list="profileTags" maxlength="20" placeholder="精确标签"><datalist id="profileTags"></datalist></label></div>
+  <div id="profileEmpty" class="idea-empty" hidden>没有符合条件的内容。</div>
+  <div id="profileMore" class="idea-more" hidden><button class="btn ghost" id="btnProfileMore" type="button">加载更多</button></div>
+</main>
+<div class="toast" id="toast" role="status" hidden></div>
+<script src="{{ url_for('static', filename='content_profile.js') }}?v=3"></script>
+</body>
+</html>

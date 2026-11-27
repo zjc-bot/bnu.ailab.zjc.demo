@@ -18,10 +18,12 @@ CREATE TABLE IF NOT EXISTS `idea` (
   `author_id`     INT UNSIGNED    NOT NULL COMMENT '作者，关联 app_user.id',
   `title`         VARCHAR(200)    NOT NULL COMMENT '标题，1-200 字',
   `content`       MEDIUMTEXT      NULL     COMMENT '正文，1-20000 字',
-  `category`      VARCHAR(30)     NULL     COMMENT '分类白名单：ai/edu/bio/energy/mat/other',
+  `category`      VARCHAR(30)     NULL     COMMENT '固定分类：ai/edu/bio/energy/math/other',
+  `category_legacy` VARCHAR(30)   NULL     COMMENT '迁移前分类原值',
   `tags`          VARCHAR(255)    NULL     COMMENT '标签，英文逗号分隔，最多 8 个',
   `status`        ENUM('draft','published','archived') NOT NULL DEFAULT 'draft',
   `visibility`    ENUM('public','friends','private')   NOT NULL DEFAULT 'friends',
+  `moderation_state` ENUM('active','revoked') NOT NULL DEFAULT 'active',
   `like_count`    INT             NOT NULL DEFAULT 0 COMMENT '点赞数（由 idea_like 同步）',
   `favorite_count` INT            NOT NULL DEFAULT 0 COMMENT '收藏数（由 idea_favorite 同步）',
   `comment_count` INT             NOT NULL DEFAULT 0 COMMENT '评论数（由 idea_comment 同步）',
@@ -29,12 +31,19 @@ CREATE TABLE IF NOT EXISTS `idea` (
   `ai_summary`    TEXT            NULL     COMMENT 'AI 摘要',
   `ai_tags`       VARCHAR(255)    NULL     COMMENT 'AI 标签，逗号分隔',
   `content_hash`  CHAR(64)        NULL     COMMENT '正文 SHA-256，用于去重/判定内容变更',
+  `row_version`   BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  `moderation_reason_code` VARCHAR(30) NULL,
+  `moderation_reason` VARCHAR(500) NULL,
+  `moderated_at`  DATETIME        NULL,
+  `moderated_by`  INT UNSIGNED    NULL,
   `created_at`    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at`    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP
                                   ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_author` (`author_id`),
   KEY `idx_status_vis` (`status`, `visibility`),
+  KEY `idx_moderation_public` (`moderation_state`,`status`,`visibility`,`created_at`),
+  KEY `idx_author_status_updated` (`author_id`,`status`,`updated_at`,`id`),
   KEY `idx_created` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='Idea 社区帖子（新增表，可单独执行）';
@@ -44,7 +53,8 @@ CREATE TABLE IF NOT EXISTS `idea_favorite` (
   `idea_id`    BIGINT UNSIGNED NOT NULL COMMENT '被收藏的 idea，关联 idea.id',
   `created_at` DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`user_id`, `idea_id`),
-  KEY `idx_idea` (`idea_id`)
+  KEY `idx_idea` (`idea_id`),
+  KEY `idx_user_created` (`user_id`,`created_at`,`idea_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='Idea 收藏关系（新增表，可单独执行）';
 

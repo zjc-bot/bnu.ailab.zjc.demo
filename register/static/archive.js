@@ -6,88 +6,47 @@ function escapeHtml(v) {
 }
 var E = escapeHtml;
 
+function renderBody(value) {
+  const text = value == null || value === "" ? "暂无正文。" : String(value);
+  return E(text).replace(/https?:\/\/[^\s<>"']+/g, function (match) {
+    const trailing = (match.match(/[),，。；]+$/) || [""])[0];
+    const url = trailing ? match.slice(0, -trailing.length) : match;
+    return `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>${trailing}`;
+  });
+}
 
 // 分类导航由 /api/archive.json 下发，后端硬保证 <=10（含「全部」）。
 let CATS = [{ id: "all", label: "全部" }];
 
-const BASE = [
-  { id:"p01", code:"P-01", cat:"ai", kind:"poster", x:210, y:78, w:266, h:212, r:-2, z:3,
-    title:"小样本条件下的视觉表征迁移", year:"2025", status:"已发表", st:"",
-    summary:"提出跨模态微调框架，在标注数据不足时仍保持较高识别精度。",
-    tags:["小样本学习","跨模态","表征迁移"], owner:"林见微 · 视觉智能组",
-    metric:"41.2%", metricLabel:"低资源场景识别准确率提升" },
-  { id:"l02", code:"L-02", cat:"bio", kind:"sheet", x:470, y:58, w:288, h:200, r:1.2, z:2,
-    title:"肠道微生物群落与代谢标志物关联日志", year:"2024", status:"已结项", st:"done",
-    summary:"16S 测序与代谢组联合分析的第 37 批次实验过程与异常标记。",
-    tags:["微生物组","代谢组","关联分析"], owner:"周砚 · 生物信息组",
-    metric:"1,284", metricLabel:"份样本",
-    rows:[["01","样本离心 · 4℃ 保存"],["02","DNA 提取 · 批次复测 ×3"],["03","16S 扩增 · 异常标记"],["04","代谢组联配 · 待复核"]],
-    red:"第 03 批异常 ↗" },
-  { id:"c03", code:"C-03", cat:"mat", kind:"ticket", x:738, y:92, w:326, h:132, r:-3, z:5,
-    title:"可持续材料在柔性传感中的边界", year:"2026", status:"进行中", st:"doing",
-    summary:"国际材料年会分会场报告：可降解基底的导电稳定性测试。",
-    tags:["柔性传感","可降解材料","会议报告"], owner:"陈屿 · 材料与传感组",
-    metric:"18 min", metricLabel:"报告时长 / 席位 A-12" },
-  { id:"n04", code:"N-04", cat:"edu", kind:"card", x:1008, y:218, w:202, h:116, r:-7, z:6,
-    title:"跨校联合实验室联络人名录", year:"2025", status:"进行中", st:"doing",
-    summary:"六所高校在乡村教育技术项目中的对接人与分工口径。",
-    tags:["联合实验室","协作网络","教育技术"], owner:"许南 · 教育技术组",
-    metric:"6", metricLabel:"所合作机构" },
-  { id:"f05", code:"F-05", cat:"energy", kind:"photo", x:232, y:330, w:238, h:198, r:3, z:4,
-    title:"屋顶光伏阵列的三年衰减实录", year:"2023", status:"已结项", st:"done",
-    summary:"定点摄影记录不同倾角组件在湿热气候下的积灰与封装老化。",
-    tags:["光伏","户外实证","衰减监测"], owner:"何予 · 可持续能源组",
-    metric:"36", metricLabel:"个月连续观测" },
-  { id:"s06", code:"S-06", cat:"ai", kind:"note", x:500, y:292, w:232, h:192, r:-4, z:7,
-    title:"推理成本下降的临界点备忘", year:"2026", status:"进行中", st:"doing",
-    summary:"把大模型推理延迟压到交互级所需的最小算力配置与取舍。",
-    tags:["模型压缩","推理优化","边缘部署"], owner:"林见微 · 视觉智能组",
-    metric:"7.4×", metricLabel:"吞吐提升",
-    red:"先保延迟，再谈成本 ↗" },
-  { id:"j07", code:"J-07", cat:"edu", kind:"journal", x:752, y:322, w:252, h:198, r:2, z:8,
-    title:"形成性反馈对在线学习留存的影响", year:"2025", status:"已发表", st:"",
-    summary:"两学期课程数据检验即时反馈机制对完课率与测评表现的提升。",
-    tags:["形成性评估","在线学习","学习分析"], owner:"许南 · 教育技术组",
-    metric:"12.8%", metricLabel:"完课率提升",
-    refs:"Ref. 14 / 21 · 课程数据 2023—2025" },
-  { id:"b08", code:"B-08", cat:"mat", kind:"blueprint", x:988, y:386, w:196, h:206, r:5, z:9,
-    title:"低功耗传感节点的结构剖面图", year:"2024", status:"已结项", st:"done",
-    summary:"可量产外壳的层叠结构与热管理走线，标注公差与装配顺序。",
-    tags:["结构设计","热管理","原型试制"], owner:"陈屿 · 材料与传感组",
-    metric:"23.7%", metricLabel:"能耗降低" },
-];
-
-// 展开详情的补充正文；真实数据接入时由后端同结构返回即可替换。
-const DETAILS = {
-  p01: { method:"以视觉编码器为底座，引入跨模态对齐层与少量可训练参数，在 8/16/32 样本三档设置下系统比较迁移稳定性。", finding:"32 样本时仍保持 41.2% 的准确率提升，且对域外噪声的敏感度低于全量微调基线；对齐层权重可作为可解释性切入。", impact:"为标注成本高、样本稀缺的研究场景提供可复用的微调路径，方法已在两个合作课题中试用。" },
-  l02: { method:"对 1,284 份样本做 16S rRNA 测序与非靶向代谢组联配，按批次记录提取、扩增、上机与异常复核全过程。", finding:"第 37 批次的异常标记集中在扩增环节，复测后与代谢标志物的相关性恢复稳定，提示批次效应对关联结论的显著影响。", impact:"形成可追溯的实验日志模板，后续批次沿用同一编号与异常标注规范。" },
-  c03: { method:"在可降解基底上制备导电网络，通过 200 次弯折循环与湿热老化测试评估稳定性，并在国际材料年会做分会场报告。", finding:"降解基底在 18 分钟报告对应的稳定性窗口内保持可用电阻区间，超出后衰减加速，界定了当前材料的适用边界。", impact:"给出可降解柔性传感的可行性边界，为后续材料改性设定量化目标。" },
-  n04: { method:"梳理六所高校在乡村教育技术项目中的对接人、分工口径与数据接口，建立统一的联络与升级路径。", finding:"跨校协作的主要摩擦来自口径不一致而非技术问题；统一名录后需求响应时间明显缩短。", impact:"名录成为联合实验室的常驻协作基线，支持后续扩展到更多合作单位。" },
-  f05: { method:"以固定机位、固定曝光每季度拍摄一次屋顶光伏阵列，连续 36 个月记录不同倾角组件的积灰与封装老化。", finding:"湿热季积灰速率显著高于干燥季，倾角较小组件的衰减更快；照片序列提供肉眼可核对的实证材料。", impact:"为户外实证提供可视化档案，支撑组件选型与清洗周期建议。" },
-  s06: { method:"在边缘设备上对比量化、剪枝与算子融合组合，测量从请求到首 token 的端到端延迟与吞吐。", finding:"达到交互级延迟的临界配置并非最大算力，而是合适的算子融合与批处理窗口；吞吐提升 7.4 倍。", impact:"为低算力环境下的推理部署给出可操作取舍顺序。" },
-  j07: { method:"基于两学期在线课程数据，用形成性反馈机制分组对照，检验即时反馈对完课率与测评表现的影响。", finding:"即时反馈组完课率提升 12.8%，且中低基础学生获益更明显；反馈时机比反馈数量更关键。", impact:"结论已反馈给课程团队，用于调整在线学习的反馈节奏设计。" },
-  b08: { method:"对低功耗传感节点外壳做层叠结构设计，标注关键公差、热管理走线与装配顺序，并试制原型验证。", finding:"优化后的结构在保持散热裕量的同时降低 23.7% 能耗，装配步骤由 11 步压缩到 7 步。", impact:"剖面图作为量产交接依据，缩短原型到小批量试制的周期。" },
-};
-
 // 统计贴纸由 API 实时下发；坐标仅为排版常量。
 let STATS = [];
 const STAT_POS = [
-  { x:210, y:594, r:-1.5 }, { x:340, y:598, r:1.2 },
-  { x:470, y:592, r:-0.8 }, { x:600, y:597, r:1.6 },
-  { x:730, y:593, r:-1.2 },
+  { x: 210, y: 594, r: -1.5 }, { x: 340, y: 598, r: 1.2 },
+  { x: 470, y: 592, r: -0.8 }, { x: 600, y: 597, r: 1.6 },
+  { x: 730, y: 593, r: -1.2 },
 ];
 
+const viewport = document.getElementById("viewport");
 const hit = document.getElementById("hit");
 const stage = document.getElementById("stage");
 const nav = document.getElementById("nav");
 const countEl = document.getElementById("count");
+const statusEl = document.getElementById("archiveStatus");
+const statusText = document.getElementById("archiveStatusText");
+const retryButton = document.getElementById("archiveRetry");
+const ARCHIVE_API = (document.currentScript && document.currentScript.getAttribute("data-archive-api")) || window.ARCHIVE_API || "";
 let pieces = [];
 let cursor = 0;
 let activeCat = "all";
 let lastWheel = 0;
+let loadError = false;
 
 function pad(n) { return String(n).padStart(2, "0"); }
 function maxZ() { return Math.max(...pieces.map(p => p.z)); }
+function isCompactLayout() {
+  return window.matchMedia ? window.matchMedia("(max-width: 900px)").matches : window.innerWidth <= 900;
+}
+
 function face(p) {
   const tags = (p.tags || []).map(t => `<span class="tag">${E(t)}</span>`).join("");
   const status = `<span class="status ${E(p.st)}"><i></i>${E(p.status)}</span>`;
@@ -153,23 +112,24 @@ function face(p) {
 
 function build() {
   hit.innerHTML = pieces.map((p, i) =>
-    `<article class="piece" data-i="${i}" tabindex="0" aria-label="${E(p.title)}"><div class="piece-sheet">${face(p)}</div></article>`
+    `<article class="piece" data-i="${i}" tabindex="0" role="button" aria-haspopup="dialog" aria-controls="detailOverlay" aria-expanded="false" aria-label="${E(p.title)}"><div class="piece-sheet"><span class="piece-category">${E(p.catLabel || "其他")}</span>${face(p)}</div></article>`
   ).join("") + (pieces.length ? STATS.slice(0, 5).map((s, i) => {
     const g = STAT_POS[i % STAT_POS.length];
     return `<div class="stat" style="transform:translate(${g.x}px,${g.y}px) rotate(${g.r}deg)"><b>${E(s.value)}</b><span>${E(s.label)}</span></div>`;
   }).join("") : "") + (pieces.length
     ? `<div class="stat-note">数据实时统计 · 来自平台公开分享</div>`
-    : `<div class="archive-empty">暂无公开分享的 idea，来发布第一个吧</div>`);
+    : `<div class="archive-empty">${loadError ? "公开分享暂时无法加载" : "暂无公开分享的 idea，来发布第一个吧"}</div>`);
 
   hit.querySelectorAll(".piece").forEach(el => bindPiece(el));
   nav.innerHTML = CATS.slice(0, 10).map(c =>
-    `<button data-cat="${E(c.id)}" class="${c.id === activeCat ? "active" : ""}"><span class="slot">${c.id === activeCat ? '<i class="dot"></i>' : ""}</span>${E(c.label)}</button>`
+    `<button type="button" data-cat="${E(c.id)}" aria-pressed="${c.id === activeCat}" class="${c.id === activeCat ? "active" : ""}"><span class="slot">${c.id === activeCat ? '<i class="dot"></i>' : ""}</span>${E(c.label)}</button>`
   ).join("");
   nav.querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
     activeCat = b.dataset.cat;
     nav.querySelectorAll("button").forEach(x => {
       const on = x === b;
       x.classList.toggle("active", on);
+      x.setAttribute("aria-pressed", String(on));
       x.querySelector(".slot").innerHTML = on ? '<i class="dot"></i>' : "";
     });
     paint();
@@ -183,6 +143,7 @@ function paint() {
     el.style.width = p.w + "px";
     el.style.height = p.h + "px";
     el.style.zIndex = p.z;
+    el.style.setProperty("--piece-r", `${p.r}deg`);
     el.style.transform = `translate(${p.x}px, ${p.y}px) rotate(${p.r}deg)`;
     el.classList.toggle("is-active", i === cursor);
     el.classList.toggle("is-dim", activeCat !== "all" && p.cat !== activeCat && !(p.tags || []).includes(activeCat));
@@ -194,7 +155,7 @@ function bindPiece(el) {
   const i = Number(el.dataset.i);
   let origin = null;
   el.addEventListener("pointerdown", e => {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || isCompactLayout()) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     el.classList.add("is-dragging");
     pieces[i].z = maxZ() + 1;
@@ -214,10 +175,19 @@ function bindPiece(el) {
     const wasClick = origin && !origin.moved;
     el.classList.remove("is-dragging");
     origin = null;
-    if (wasClick) openDetail(i);
+    if (wasClick) openDetail(i, el);
   };
   el.addEventListener("pointerup", up);
   el.addEventListener("pointercancel", () => { el.classList.remove("is-dragging"); origin = null; });
+  el.addEventListener("click", () => {
+    if (isCompactLayout()) openDetail(i, el);
+  });
+  el.addEventListener("keydown", e => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      if (!e.repeat) openDetail(i, el);
+    }
+  });
   el.addEventListener("focus", () => { cursor = i; paint(); });
 }
 
@@ -267,10 +237,13 @@ function reset() {
 function scale() {
   return Math.min(window.innerWidth / 1240, window.innerHeight / 760);
 }
-function fit() { stage.style.transform = `scale(${scale()})`; }
+function fit() {
+  stage.style.transform = isCompactLayout() ? "" : `scale(${scale()})`;
+}
 window.addEventListener("resize", fit);
 
 hit.addEventListener("wheel", e => {
+  if (isCompactLayout()) return;
   e.preventDefault();
   const now = performance.now();
   if (now - lastWheel < 260) return;
@@ -279,13 +252,6 @@ hit.addEventListener("wheel", e => {
   step((e.deltaY || e.deltaX) > 0 ? 1 : -1);
 }, { passive: false });
 
-window.addEventListener("keydown", e => {
-  const tag = (e.target && e.target.tagName) || "";
-  if (["INPUT", "TEXTAREA", "SELECT"].includes(tag)) return;
-  if (["ArrowDown", "ArrowRight"].includes(e.key)) { e.preventDefault(); step(1); }
-  else if (["ArrowUp", "ArrowLeft"].includes(e.key)) { e.preventDefault(); step(-1); }
-});
-
 document.getElementById("next").addEventListener("click", () => step(1));
 document.getElementById("shuffle").addEventListener("click", shuffle);
 document.getElementById("reset").addEventListener("click", reset);
@@ -293,58 +259,151 @@ stage.addEventListener("dblclick", e => { if (e.target.closest(".join-card")) re
 
 const overlay = document.getElementById("detailOverlay");
 const sheet = document.getElementById("detailSheet");
-const KIND_LABEL = { poster:"海报", sheet:"实验记录", ticket:"会议门票", card:"名片", photo:"现场照片", note:"备忘便签", journal:"期刊论文", blueprint:"结构蓝图" };
 let detailIndex = -1;
+let detailReturnFocus = null;
 
-function openDetail(i) {
+function openDetail(i, trigger) {
   if (!pieces.length || !pieces[i]) return;
+  const wasOpen = detailIndex >= 0;
+  const focusedId = wasOpen && sheet.contains(document.activeElement) ? document.activeElement.id : "";
+  if (!wasOpen) detailReturnFocus = trigger || document.activeElement;
   detailIndex = i;
   const p = pieces[i];
-  const d = DETAILS[String(p.id || "").toLowerCase()] || {};
-  const method = E(p.method || d.method || p.summary || "详情数据待补充。");
-  const finding = E(p.finding || d.finding || "详情数据待补充。");
-  const impact = E(p.impact || d.impact || "详情数据待补充。");
   sheet.innerHTML = `
-    <button class="close" id="dClose" aria-label="关闭">×</button>
-    <div class="d-head"><span class="d-code">${E(p.code)}</span><span class="d-kind">${E(KIND_LABEL[p.kind] || p.kind)}</span><span class="d-year">${E(p.year)}</span></div>
+    <button class="close" id="dClose" type="button" aria-label="关闭">×</button>
+    <div class="d-head"><span class="d-code">${E(p.code)}</span><span class="d-kind">${E(p.catLabel || "其他")}</span><span class="d-year">${E(p.year)}</span></div>
     <h2 id="dTitle">${E(p.title)}</h2>
     <div class="d-metric-row"><span class="d-metric">${E(p.metric)}</span><span class="d-metric-label">${E(p.metricLabel)}</span></div>
-    <p class="d-summary">${E(p.summary)}</p>
-    <div class="d-section"><h3>研究方法</h3><p>${method}</p></div>
-    <div class="d-section"><h3>主要发现</h3><p>${finding}</p></div>
-    <div class="d-section"><h3>研究意义</h3><p>${impact}</p></div>
+    <div class="d-summary d-content">${renderBody(p.content || p.summary)}</div>
     <div class="d-tags">${(p.tags || []).map(t => `<span class="tag">${E(t)}</span>`).join("")}</div>
     <div class="d-foot"><span class="d-owner">${E(p.owner)} · ${E(p.status)}</span>
-      <span class="d-nav"><button id="dPrev">← 上一项</button><button id="dNext">下一项 →</button></span>
+      <span class="d-nav"><button id="dPrev" type="button">← 上一项</button><button id="dNext" type="button">下一项 →</button></span>
     </div>
     <div class="d-source">数据源：平台公开分享</div>`;
+
+  if (!wasOpen) {
+    viewport.inert = true;
+    viewport.setAttribute("aria-hidden", "true");
+    overlay.inert = false;
+    overlay.setAttribute("aria-hidden", "false");
+  }
+  hit.querySelectorAll(".piece").forEach((el, index) => el.setAttribute("aria-expanded", String(index === i)));
   overlay.classList.add("open");
-  document.getElementById("dClose").onclick = closeDetail;
-  document.getElementById("dPrev").onclick = () => openDetail(pieces.length ? (detailIndex - 1 + pieces.length) % pieces.length : 0);
-  document.getElementById("dNext").onclick = () => openDetail(pieces.length ? (detailIndex + 1) % pieces.length : 0);
+  document.getElementById("dClose").addEventListener("click", closeDetail);
+  document.getElementById("dPrev").addEventListener("click", () => openDetail(pieces.length ? (detailIndex - 1 + pieces.length) % pieces.length : 0));
+  document.getElementById("dNext").addEventListener("click", () => openDetail(pieces.length ? (detailIndex + 1) % pieces.length : 0));
+  const focusTarget = document.getElementById(focusedId || "dClose");
+  if (focusTarget) focusTarget.focus({ preventScroll: true });
 }
-function closeDetail() { overlay.classList.remove("open"); detailIndex = -1; }
+
+function closeDetail() {
+  if (detailIndex < 0) return;
+  overlay.classList.remove("open");
+  detailIndex = -1;
+  viewport.inert = false;
+  viewport.removeAttribute("aria-hidden");
+  overlay.inert = true;
+  overlay.setAttribute("aria-hidden", "true");
+  hit.querySelectorAll(".piece").forEach(el => el.setAttribute("aria-expanded", "false"));
+  const target = detailReturnFocus;
+  detailReturnFocus = null;
+  if (target && target.isConnected !== false) target.focus({ preventScroll: true });
+}
+
+function trapDetailFocus(e) {
+  const focusable = Array.from(sheet.querySelectorAll("button, a[href], [tabindex]:not([tabindex='-1'])"))
+    .filter(el => !el.disabled && !el.hidden);
+  if (!focusable.length) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  const active = document.activeElement;
+  if (e.shiftKey && (active === first || !sheet.contains(active))) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && (active === last || !sheet.contains(active))) {
+    e.preventDefault();
+    first.focus();
+  }
+}
+
 overlay.addEventListener("click", e => { if (e.target === overlay) closeDetail(); });
+
+// 全页只保留一个方向键处理器：弹窗打开时不会同时推进背景纸片。
 window.addEventListener("keydown", e => {
-  if (e.key === "Escape" && detailIndex >= 0) closeDetail();
-  if (detailIndex >= 0 && e.key === "ArrowRight") openDetail(pieces.length ? (detailIndex + 1) % pieces.length : 0);
-  if (detailIndex >= 0 && e.key === "ArrowLeft") openDetail(pieces.length ? (detailIndex - 1 + pieces.length) % pieces.length : 0);
+  if (e.defaultPrevented) return;
+  if (detailIndex >= 0) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeDetail();
+    } else if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+      e.preventDefault();
+      if (!e.repeat) openDetail(pieces.length ? (detailIndex + (e.key === "ArrowRight" ? 1 : -1) + pieces.length) % pieces.length : 0);
+    } else if (e.key === "Tab") {
+      trapDetailFocus(e);
+    }
+    return;
+  }
+  const tag = (e.target && e.target.tagName) || "";
+  if (["INPUT", "TEXTAREA", "SELECT"].includes(tag)) return;
+  if (["ArrowDown", "ArrowRight"].includes(e.key)) { e.preventDefault(); step(1); }
+  else if (["ArrowUp", "ArrowLeft"].includes(e.key)) { e.preventDefault(); step(-1); }
 });
+
+function showArchiveError(message) {
+  loadError = true;
+  pieces = [];
+  STATS = [];
+  CATS = [{ id: "all", label: "全部" }];
+  cursor = 0;
+  build();
+  statusText.textContent = `${message} 请检查网络后重试。`;
+  statusEl.hidden = false;
+  retryButton.disabled = false;
+}
+
+// HTTP 状态与 JSON 契约都必须通过；失败保留明确提示和重试入口。
+async function loadArchive() {
+  const api = ARCHIVE_API;
+  retryButton.disabled = true;
+  statusEl.hidden = true;
+  if (!api) {
+    showArchiveError("数据接口未配置。");
+    return;
+  }
+  try {
+    let response;
+    try {
+      response = await fetch(api, { headers: { Accept: "application/json" }, cache: "no-store" });
+    } catch (error) {
+      throw new Error("网络连接失败。");
+    }
+    if (!response.ok) throw new Error(`加载失败（HTTP ${response.status}）。`);
+    let data;
+    try {
+      data = await response.json();
+    } catch (error) {
+      throw new Error("服务器返回了无法解析的 JSON 数据。");
+    }
+    if (!data || !Array.isArray(data.items) || !Array.isArray(data.stats) || !Array.isArray(data.tags)) {
+      throw new Error("公开分享数据格式不正确。");
+    }
+    loadError = false;
+    applyData(data);
+  } catch (error) {
+    showArchiveError(error.message || "加载失败。");
+  } finally {
+    retryButton.disabled = false;
+  }
+}
+
+retryButton.addEventListener("click", loadArchive);
 
 // 数据源：/api/archive.json 为唯一事实来源；空数据显示空态，绝不回退假示例。
 (function () {
-  var api = (document.currentScript && document.currentScript.getAttribute("data-archive-api")) || window.ARCHIVE_API;
   // 本地离线验证时可注入 window.__ARCHIVE__；生产无此变量时正常走 API。
   if (window.__ARCHIVE__) { applyData(window.__ARCHIVE__); return; }
-  if (!api) { build(); return; }
-  fetch(api).then(function (r) { return r.json(); }).then(function (d) {
-    applyData(d);
-  }).catch(function () {
-    pieces = []; STATS = []; CATS = [{ id: "all", label: "全部" }];
-    build();
-  });
+  loadArchive();
 })();
-
 
 build();
 fit();

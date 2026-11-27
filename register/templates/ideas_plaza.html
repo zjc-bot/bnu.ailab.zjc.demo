@@ -6,7 +6,7 @@
 <meta name="csrf" content="{{ csrf }}">
 <title>idea 广场 · BNU AI Lab</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=11">
-<link rel="stylesheet" href="{{ url_for('static', filename='idea.css') }}?v=2">
+<link rel="stylesheet" href="{{ url_for('static', filename='idea.css') }}?v=5">
 </head>
 <body><a class="skip-link" href="#main">跳到主要内容</a>
 
@@ -23,6 +23,7 @@
       <a href="{{ url_for('home') }}">消息</a>
       <a href="{{ url_for('ideas.ideas_plaza') }}" class="on" aria-current="page">idea</a>
       <a href="{{ url_for('archive') }}">学习分享室</a>
+      <a href="{{ url_for('ideas.content_profile') }}">我的主页</a>
       <a href="{{ url_for('profile') }}">账号</a>
     </nav>
     <form method="post" action="{{ url_for('logout') }}">
@@ -59,8 +60,8 @@
       </select>
     </label>
     <label class="field" style="margin:0">
-      <span>关键词（支持标题、正文、标签搜索）</span>
-      <input id="fTag" type="text" maxlength="30" placeholder="标签或关键词">
+      <span>关键词（支持标题、正文、标签、作者昵称）</span>
+      <input id="fTag" type="text" maxlength="60" placeholder="标题、正文、标签或昵称">
     </label>
     <label class="field" style="margin:0">
       <span>排序</span>
@@ -77,6 +78,6 @@
 </main>
 
 <div class="toast" id="toast" role="status" hidden></div>
-<script src="{{ url_for('static', filename='idea.js') }}?v=2"></script>
+<script src="{{ url_for('static', filename='idea.js') }}?v=4"></script>
 </body>
 </html>

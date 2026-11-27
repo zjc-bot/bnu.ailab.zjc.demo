@@ -1057,8 +1057,7 @@
           '<div class="im-av">' + avatar(d.user.nickname) + '</div>' +
           '<div class="im-result-main">' +
             '<div class="im-result-name">' + esc(d.user.nickname) + '</div>' +
-            '<div class="im-result-meta">' + esc(d.user.real_name) + ' · ' +
-              esc(d.user.student_no) + '</div>' +
+            '<div class="im-result-meta">学号 ' + esc(d.user.student_no) + '</div>' +
           '</div>';
         if (d.user.is_friend) {
           addHint.textContent = '已经是好友了';

@@ -15,14 +15,14 @@ import secrets
 from functools import wraps
 
 from flask import (
-    Blueprint, abort, jsonify, redirect, render_template, request, session, url_for,
+    Blueprint, abort, jsonify, make_response, redirect, render_template, request, session, url_for,
 )
 
 from . import store
+from .constants import CATEGORIES, CATEGORY_LABELS
 
 ideas_bp = Blueprint("ideas", __name__)
 
-CATEGORIES = ("ai", "edu", "bio", "energy", "mat", "other")
 VISIBILITIES = ("public", "friends", "private")
 STATUSES = ("draft", "published", "archived")
 MAX_TITLE = 200
@@ -30,6 +30,7 @@ MAX_CONTENT = 20000
 MAX_COMMENT = 2000
 MAX_TAGS = 8
 MAX_TAG_LEN = 20
+MAX_CATEGORY = 30
 
 
 # ---------- 登录与 CSRF（与 app.py 等价） ----------
@@ -83,16 +84,40 @@ def _normalize_tags(raw):
     if isinstance(raw, str):
         parts = [p.strip() for p in re.split(r"[,，]", raw)]
     elif isinstance(raw, (list, tuple)):
-        parts = [str(p).strip() for p in raw]
+        if not all(isinstance(p, str) for p in raw):
+            raise ValueError("标签格式不正确")
+        parts = [part.strip() for value in raw
+                 for part in re.split(r"[,，]", value)]
     else:
         raise ValueError("标签格式不正确")
     parts = [p for p in parts if p]
-    if len(parts) > MAX_TAGS:
-        raise ValueError("标签最多 8 个")
+    unique = []
+    seen = set()
     for tag in parts:
         if len(tag) > MAX_TAG_LEN:
             raise ValueError("单个标签最多 20 字")
-    return ",".join(parts)
+        key = tag.casefold()
+        if key not in seen:
+            seen.add(key)
+            unique.append(tag)
+    if len(unique) > MAX_TAGS:
+        raise ValueError("标签最多 8 个")
+    return ",".join(unique)
+
+
+def _text(value, name):
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise ValueError(name + "需为字符串")
+    return value.strip()
+
+
+def _json_object():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        raise ValueError("请求体需为 JSON 对象")
+    return data
 
 
 def _validate(data, partial=False):
@@ -100,36 +125,40 @@ def _validate(data, partial=False):
     out = {}
 
     if "title" in data or not partial:
-        title = str(data.get("title") or "").strip()
+        title = _text(data.get("title"), "标题")
         if not 1 <= len(title) <= MAX_TITLE:
             raise ValueError("标题需为 1-200 字")
         out["title"] = title
 
     if "content" in data or not partial:
-        content = str(data.get("content") or "").strip()
+        content = _text(data.get("content"), "正文")
         if not 1 <= len(content) <= MAX_CONTENT:
             raise ValueError("正文需为 1-20000 字")
         out["content"] = content
         out["content_hash"] = hashlib.sha256(content.encode("utf-8")).hexdigest()
 
     if "category" in data or not partial:
-        # 分类可自定义，不再做白名单校验（仅限制长度）。
-        category = str(data.get("category") or "").strip()[:60] or None
+        value = data.get("category")
+        category = _text("other" if value in (None, "") else value, "分类").lower()
+        if category not in CATEGORIES:
+            raise ValueError("分类需为 ai/edu/bio/energy/math/other 之一")
         out["category"] = category
 
     if "tags" in data or not partial:
         out["tags"] = _normalize_tags(data.get("tags"))
 
     if "visibility" in data or not partial:
-        visibility = str(data.get("visibility") or "public").strip()
+        value = data.get("visibility")
+        visibility = _text("public" if value in (None, "") else value, "可见性")
         if visibility not in VISIBILITIES:
             raise ValueError("可见性不在允许范围内")
         out["visibility"] = visibility
 
-    if "status" in data and str(data.get("status") or "") not in STATUSES:
-        raise ValueError("状态不在允许范围内")
     if "status" in data:
-        out["status"] = str(data["status"])
+        status = _text(data.get("status"), "状态")
+        if status not in STATUSES:
+            raise ValueError("状态不在允许范围内")
+        out["status"] = status
 
     return out
 
@@ -170,7 +199,7 @@ def idea_new():
         "idea_form.html",
         idea=None,
         csrf=_csrf(),
-        categories=CATEGORIES,
+        categories=[{"value": code, "label": CATEGORY_LABELS[code]} for code in CATEGORIES],
         visibilities=VISIBILITIES,
     )
 
@@ -188,12 +217,78 @@ def idea_detail(idea_id):
         comments=store.list_comments(idea_id, uid),
         favorited=store.user_has_favorited(idea_id, uid),
         liked=store.user_has_liked(idea_id, uid),
-        can_edit=idea["author_id"] == uid,
+        can_edit=idea["author_id"] == uid and idea.get("moderation_state") == "active",
         csrf=_csrf(),
     )
 
 
-# ---------- JSON API ----------
+@ideas_bp.get("/ideas/<int:idea_id>/edit")
+@page_login_required
+def idea_edit(idea_id):
+    uid = session["uid"]
+    idea = store.get_idea(idea_id)
+    if not idea or idea["author_id"] != uid:
+        abort(404)
+    return render_template(
+        "idea_form.html",
+        idea=idea,
+        csrf=_csrf(),
+        categories=[{"value": code, "label": CATEGORY_LABELS[code]} for code in CATEGORIES],
+        visibilities=VISIBILITIES,
+        read_only=idea.get("moderation_state") != "active",
+    )
+
+@ideas_bp.get("/profile")
+@page_login_required
+def content_profile():
+    initial_view = "favorites" if request.args.get("view") == "favorites" else "owned"
+    response = make_response(render_template(
+        "content_profile.html", csrf=_csrf(), initial_view=initial_view,
+    ))
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+@ideas_bp.get("/api/profile/summary")
+@api_login_required
+def api_profile_summary():
+    response = jsonify(store.profile_summary(session["uid"]))
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+@ideas_bp.get("/api/profile/ideas")
+@api_login_required
+def api_profile_ideas():
+    items, total = store.list_owned_ideas(
+        session["uid"], q=request.args.get("q") or None,
+        category=request.args.get("category") or None,
+        tag=request.args.get("tag") or None,
+        status=request.args.get("status") or None,
+        sort=request.args.get("sort") or "updated",
+        page=request.args.get("page", 1, type=int),
+        size=request.args.get("size", 20, type=int),
+    )
+    response = jsonify(items=items, total=total)
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+@ideas_bp.get("/api/profile/favorites")
+@api_login_required
+def api_profile_favorites():
+    items, total, unavailable = store.list_favorited_ideas(
+        session["uid"], q=request.args.get("q") or None,
+        category=request.args.get("category") or None,
+        tag=request.args.get("tag") or None,
+        sort=request.args.get("sort") or "new",
+        page=request.args.get("page", 1, type=int),
+        size=request.args.get("size", 20, type=int),
+        include_unavailable=not any(request.args.get(k) for k in ("q", "category", "tag")),    )
+    response = jsonify(items=items, total=total, unavailable_count=unavailable)
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
 
 @ideas_bp.post("/api/ideas")
 @api_login_required
@@ -201,13 +296,15 @@ def api_idea_create():
     if not _api_csrf_ok():
         return _forbidden()
     try:
-        payload = _validate(request.get_json(silent=True) or {})
+        payload = _validate(_json_object())
     except ValueError as exc:
         return jsonify(error=str(exc)), 400
     # 发布即公开：默认 published，否则列表只查 published 会看不到刚发布的想法。
     # 显式传 draft 时仍可存草稿（前端表单当前不提供该选项）。
     payload.setdefault("status", "published")
     idea_id = store.create_idea(session["uid"], payload)
+    if idea_id is None:
+        return jsonify(error="账号不可用，请重新登录"), 401
     return jsonify(id=idea_id, idea=store.get_idea(idea_id)), 201
 
 
@@ -222,6 +319,7 @@ def api_idea_list():
         author_id=request.args.get("author", type=int),
         page=request.args.get("page", 1, type=int),
         size=request.args.get("size", 20, type=int),
+        sort=request.args.get("sort") or "new",
     )
     return jsonify(items=items, total=total)
 
@@ -236,7 +334,18 @@ def api_idea_featured():
 @api_login_required
 def api_tag_list():
     """标签字典：关键词搜索 + 置顶优先，供管理与筛选共用。"""
-    return jsonify(items=store.list_tags(q=request.args.get("q") or None))
+    return jsonify(items=store.list_tags(
+        q=request.args.get("q") or None,
+        viewer_id=session["uid"],
+    ))
+
+
+@ideas_bp.get("/api/categories")
+@api_login_required
+def api_category_list():
+    return jsonify(items=[
+        {"value": code, "label": CATEGORY_LABELS[code]} for code in CATEGORIES
+    ])
 
 
 @ideas_bp.get("/api/ideas/<int:idea_id>")
@@ -251,7 +360,7 @@ def api_idea_get(idea_id):
         comments=store.list_comments(idea_id, uid),
         favorited=store.user_has_favorited(idea_id, uid),
         liked=store.user_has_liked(idea_id, uid),
-        can_edit=idea["author_id"] == uid,
+        can_edit=idea["author_id"] == uid and idea.get("moderation_state") == "active",
     )
 
 
@@ -267,12 +376,24 @@ def api_idea_update(idea_id):
     if idea["author_id"] != uid:
         return jsonify(error="无权修改"), 403
     try:
-        payload = _validate(request.get_json(silent=True) or {}, partial=True)
+        raw = _json_object()
+        payload = _validate(raw, partial=True)
+        expected_version = raw.get("row_version")
+        if (isinstance(expected_version, bool)
+                or not isinstance(expected_version, (int, str))
+                or not str(expected_version).isdigit()):
+            return jsonify(error="row_version 需为非负整数"), 400
+        expected_version = int(expected_version)
     except ValueError as exc:
         return jsonify(error=str(exc)), 400
     if not payload:
         return jsonify(error="没有可更新的字段"), 400
-    if not store.update_idea(idea_id, uid, payload):
+    result = store.update_idea(idea_id, uid, payload, expected_version)
+    if result == "conflict":
+        return jsonify(error="内容已被修改，请刷新后重试", code="conflict"), 409
+    if result == "revoked":
+        return jsonify(error="该 idea 已被撤销，仅可查看"), 403
+    if not result:
         return jsonify(error="更新失败"), 400
     return jsonify(ok=True, idea=store.get_idea(idea_id))
 
@@ -288,7 +409,11 @@ def api_idea_delete(idea_id):
         return _missing()
     if idea["author_id"] != uid:
         return jsonify(error="无权删除"), 403
-    store.delete_idea(idea_id, uid)
+    result = store.delete_idea(idea_id, uid)
+    if result == "revoked":
+        return jsonify(error="该 idea 已被撤销，不能删除"), 403
+    if not result:
+        return jsonify(error="删除失败"), 400
     return jsonify(ok=True)
 
 
@@ -337,8 +462,11 @@ def api_idea_comment_add(idea_id):
     uid = session["uid"]
     if not store.can_view_idea(idea_id, uid):
         return _missing()
-    data = request.get_json(silent=True) or {}
-    content = str(data.get("content") or "").strip()
+    try:
+        data = _json_object()
+        content = _text(data.get("content"), "评论")
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
     if not 1 <= len(content) <= MAX_COMMENT:
         return jsonify(error="评论需为 1-2000 字"), 400
     parent_id = data.get("parent_id")

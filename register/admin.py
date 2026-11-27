@@ -7,22 +7,26 @@
 """
 
 import csv
+import hashlib
 import hmac
+import html
 import io
 import os
 import re
 import secrets
+import threading
 import time
 from datetime import date, timedelta
 
 from flask import (
-    Blueprint, Response, abort, current_app, redirect, render_template,
+    Blueprint, Response, abort, current_app, make_response, redirect, render_template,
     request, session, url_for,
 )
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import db
 import mailer
+from ideas import moderation as idea_moderation
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -32,6 +36,19 @@ RESET_TTL = 30
 LOGIN_LIMIT = 5
 LOGIN_WINDOW = 600
 _fails = {}
+
+# 二次认证挑战与后台会话只存服务端；Cookie 仅持有随机挑战/会话标识。
+TOTP_TTL = 300
+TOTP_ATTEMPT_LIMIT = 5
+TOTP_SEND_LIMIT = 5
+TOTP_SEND_WINDOW = 3600
+MAX_A2FA_CHALLENGES = 1000
+MAX_A2FA_SEND_KEYS = 1000
+MAX_ADMIN_SESSIONS = 1000
+_a2fa_challenges = {}
+_a2fa_sends = {}
+_admin_sessions = {}
+_state_lock = threading.RLock()
 
 
 # ---------- 工具 ----------
@@ -51,12 +68,58 @@ def _check_csrf(token):
     return bool(expect) and bool(token) and hmac.compare_digest(expect, token)
 
 
+def _clear_admin_auth():
+    sid = session.pop("a_sid", None)
+    if sid:
+        _admin_sessions.pop(sid, None)
+    for key in ("aid", "a2fa", "aname"):
+        session.pop(key, None)
+
+
+def _revoke_admin_state(aid):
+    with _state_lock:
+        for sid, rec in list(_admin_sessions.items()):
+            if rec["aid"] == aid:
+                _admin_sessions.pop(sid, None)
+        for token, challenge in list(_a2fa_challenges.items()):
+            if challenge["aid"] == aid:
+                _a2fa_challenges.pop(token, None)
+
+
+def _admin_session_valid():
+    sid = session.get("a_sid")
+    rec = _admin_sessions.get(sid)
+    if (not sid or not rec or rec["expires"] <= time.time()
+            or rec["aid"] != session.get("aid")):
+        _clear_admin_auth()
+        return False
+    return True
+
+
+def _issue_admin_session(aid, name):
+    _clear_admin_auth()
+    now = time.time()
+    for key, rec in list(_admin_sessions.items()):
+        if rec["expires"] <= now:
+            _admin_sessions.pop(key, None)
+    while len(_admin_sessions) >= MAX_ADMIN_SESSIONS:
+        _admin_sessions.pop(next(iter(_admin_sessions)))
+    sid = secrets.token_urlsafe(32)
+    lifetime = current_app.permanent_session_lifetime.total_seconds()
+    _admin_sessions[sid] = {"aid": aid, "expires": now + lifetime}
+    session["a_sid"] = sid
+    session["aid"] = aid
+    session["a2fa"] = True
+    session["aname"] = name
+    session.permanent = True
+
+
 def admin_required(fn):
     from functools import wraps
 
     @wraps(fn)
     def inner(*a, **kw):
-        if not session.get("aid"):
+        if not _admin_session_valid():
             return redirect(url_for("admin.login"))
         return fn(*a, **kw)
 
@@ -79,6 +142,107 @@ def _note_fail(ip):
         _fails[ip] = [1, time.time()]
     else:
         rec[0] += 1
+
+
+def _totp_allowed(ip):
+    rec = _a2fa_sends.get(ip)
+    if not rec or time.time() - rec[1] > TOTP_SEND_WINDOW:
+        return True
+    return rec[0] < TOTP_SEND_LIMIT
+
+
+def _note_totp(ip):
+    rec = _a2fa_sends.get(ip)
+    if not rec or time.time() - rec[1] > TOTP_SEND_WINDOW:
+        _a2fa_sends[ip] = [1, time.time()]
+    else:
+        rec[0] += 1
+
+
+def _sweep_challenges(now):
+    for key, rec in list(_a2fa_challenges.items()):
+        if rec["expires"] <= now:
+            _a2fa_challenges.pop(key, None)
+    while len(_a2fa_challenges) >= MAX_A2FA_CHALLENGES:
+        _a2fa_challenges.pop(next(iter(_a2fa_challenges)))
+
+
+def _create_challenge(aid, purpose, target, name, ip):
+    now = time.time()
+    with _state_lock:
+        _sweep_challenges(now)
+        token = secrets.token_urlsafe(32)
+        code = f"{secrets.randbelow(1000000):06d}"
+        digest = hashlib.sha256((token + code).encode("ascii")).hexdigest()
+        _a2fa_challenges[token] = {
+            "aid": aid, "purpose": purpose, "target": target, "name": name,
+            "ip": ip, "code_hash": digest, "expires": now + TOTP_TTL, "attempts": 0,
+        }
+    return token, code
+
+
+def _get_challenge():
+    token = session.get("a2fa_challenge")
+    rec = _a2fa_challenges.get(token)
+    if not token or not rec or rec["ip"] != _ip():
+        session.pop("a2fa_challenge", None)
+        return None, None
+    return token, rec
+
+
+def _clear_challenge():
+    token = session.pop("a2fa_challenge", None)
+    if token:
+        _a2fa_challenges.pop(token, None)
+
+
+def _send_challenge(aid, purpose, target, name, ip):
+    with _state_lock:
+        now = time.time()
+        for key, rec in list(_a2fa_sends.items()):
+            if now - rec[1] > TOTP_SEND_WINDOW:
+                _a2fa_sends.pop(key, None)
+        while len(_a2fa_sends) >= MAX_A2FA_SEND_KEYS:
+            _a2fa_sends.pop(next(iter(_a2fa_sends)))
+        if not _totp_allowed(ip):
+            return None, "验证码发送过于频繁，请稍后再试"
+        token, code = _create_challenge(aid, purpose, target, name, ip)
+        _note_totp(ip)
+    try:
+        mailer.send_code(
+            target, code, ttl_minutes=TOTP_TTL // 60,
+            purpose="admin" if purpose == "login" else purpose,
+        )
+    except Exception:
+        with _state_lock:
+            _a2fa_challenges.pop(token, None)
+        current_app.logger.exception("后台二次认证邮件发送失败 purpose=%s", purpose)
+        return None, "验证码邮件发送失败，请联系管理员检查邮件配置"
+    session["a2fa_challenge"] = token
+    session["_acsrf"] = secrets.token_urlsafe(32)
+    return token, None
+
+
+def _consume_challenge(token, challenge, code):
+    digest = (hashlib.sha256((token + code).encode("ascii")).hexdigest()
+              if re.fullmatch(r"[0-9]{6}", code) else "")
+    with _state_lock:
+        if _a2fa_challenges.get(token) is not challenge:
+            return "missing", challenge
+        if challenge["expires"] <= time.time():
+            _a2fa_challenges.pop(token, None)
+            session.pop("a2fa_challenge", None)
+            return "expired", challenge
+        if not digest or not hmac.compare_digest(challenge["code_hash"], digest):
+            challenge["attempts"] += 1
+            if challenge["attempts"] >= TOTP_ATTEMPT_LIMIT:
+                _a2fa_challenges.pop(token, None)
+                session.pop("a2fa_challenge", None)
+                return "locked", challenge
+            return "wrong", challenge
+        _a2fa_challenges.pop(token, None)
+        session.pop("a2fa_challenge", None)
+        return "ok", challenge
 
 
 # ---------- 查询 ----------
@@ -216,8 +380,10 @@ def summary(d_from, d_to):
 
 @bp.route("/login", methods=["GET"])
 def login():
-    if session.get("aid"):
+    if _admin_session_valid():
         return redirect(url_for("admin.dash"))
+    if not session.get("a2fa_challenge"):
+        _clear_admin_auth()
     return render_template("admin/login.html", csrf=_csrf())
 
 
@@ -233,7 +399,6 @@ def login_submit():
 
     u = (request.form.get("username") or "").strip()
     p = request.form.get("password") or ""
-
     row = q_one(
         "SELECT id, username, password_hash, display_name FROM admin_user WHERE username=%s",
         (u,),
@@ -243,25 +408,116 @@ def login_submit():
         return render_template("admin/login.html", csrf=_csrf(), err="账号或密码错误")
 
     _fails.pop(ip, None)
-    with db.connect() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "UPDATE admin_user SET last_login_at=NOW(), last_login_ip=%s WHERE id=%s",
-                (ip, row["id"]),
-            )
-            conn.commit()
+    try:
+        erow = q_one("SELECT email FROM admin_user WHERE id=%s", (row["id"],))
+        email = (erow.get("email") or "").strip() if erow else ""
+    except Exception:
+        current_app.logger.exception("后台二次认证邮箱查询失败 aid=%s", row["id"])
+        return render_template("admin/login.html", csrf=_csrf(),
+                               err="二次认证暂不可用，请联系管理员检查数据库")
+    if not email:
+        current_app.logger.error("管理员未配置二次认证邮箱，拒绝登录 aid=%s", row["id"])
+        return render_template("admin/login.html", csrf=_csrf(),
+                               err="管理员尚未配置二次认证邮箱，暂时无法登录")
 
+    name = row["display_name"] or row["username"]
     session.clear()
-    session["aid"] = row["id"]
-    session["aname"] = row["display_name"] or row["username"]
-    session["_acsrf"] = secrets.token_urlsafe(32)
     session.permanent = True
+    _, err = _send_challenge(row["id"], "login", email, name, ip)
+    if err:
+        return render_template("admin/login.html", csrf=_csrf(), err=err)
+    return redirect(url_for("admin.verify_2fa"))
+
+
+@bp.route("/verify", methods=["GET"])
+def verify_2fa():
+    if _admin_session_valid():
+        return redirect(url_for("admin.dash"))
+    _, challenge = _get_challenge()
+    if not challenge or challenge["expires"] <= time.time():
+        _clear_challenge()
+        return redirect(url_for("admin.login"))
+    return render_template(
+        "admin/verify.html", csrf=_csrf(),
+        aname=challenge["name"], purpose=challenge["purpose"],
+        target=challenge["target"],
+    )
+
+
+@bp.route("/verify", methods=["POST"])
+def verify_2fa_submit():
+    if not _check_csrf(request.form.get("csrf", "")):
+        abort(400)
+    token, challenge = _get_challenge()
+    if not challenge:
+        return redirect(url_for("admin.login"))
+
+    code = (request.form.get("code") or "").strip()
+    status, challenge = _consume_challenge(token, challenge, code)
+    if status == "missing":
+        return redirect(url_for("admin.login"))
+    if status == "expired":
+        return render_template(
+            "admin/verify.html", csrf=_csrf(), aname=challenge["name"],
+            purpose=challenge["purpose"], target=challenge["target"],
+            err="验证码已过期，请重新登录",
+        )
+    if status == "locked":
+        return render_template(
+            "admin/verify.html", csrf=_csrf(), aname=challenge["name"],
+            purpose=challenge["purpose"], target=challenge["target"],
+            err="验证码错误次数过多，请重新登录",
+        )
+    if status == "wrong":
+        return render_template(
+            "admin/verify.html", csrf=_csrf(), aname=challenge["name"],
+            purpose=challenge["purpose"], target=challenge["target"],
+            err="验证码不正确，请重试",
+        )
+
+    ip = _ip()
+    if challenge["purpose"] == "email":
+        if not _admin_session_valid() or session.get("aid") != challenge["aid"]:
+            return redirect(url_for("admin.login"))
+        try:
+            with db.connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("UPDATE admin_user SET email=%s WHERE id=%s",
+                                (challenge["target"], challenge["aid"]))
+                    conn.commit()
+        except Exception:
+            current_app.logger.exception("二次认证邮箱确认写入失败 aid=%s", challenge["aid"])
+            return redirect(url_for("admin.account", e="邮箱确认失败，旧邮箱未改变"))
+        return redirect(url_for("admin.account", ok="二次认证邮箱已确认并更新"))
+
+    if challenge["purpose"] != "login":
+        current_app.logger.error("未知后台二次认证用途")
+        return redirect(url_for("admin.login"))
+    try:
+        with db.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE admin_user SET last_login_at=NOW(), last_login_ip=%s WHERE id=%s",
+                    (ip, challenge["aid"]),
+                )
+                conn.commit()
+    except Exception:
+        current_app.logger.exception("后台登录记录写入失败 aid=%s", challenge["aid"])
+        session.clear()
+        return render_template("admin/login.html", csrf=_csrf(),
+                               err="登录暂不可用，请稍后重试")
+    session.clear()
+    _issue_admin_session(challenge["aid"], challenge["name"])
+    session["_acsrf"] = secrets.token_urlsafe(32)
     return redirect(url_for("admin.dash"))
 
 
 @bp.route("/logout", methods=["POST"])
 def logout():
     if _check_csrf(request.form.get("csrf", "")):
+        sid = session.pop("a_sid", None)
+        if sid:
+            _admin_sessions.pop(sid, None)
         session.clear()
     return redirect(url_for("admin.login"))
 
@@ -284,6 +540,13 @@ def dash():
     ]
     active_days = (d_to - d_from).days + 1
 
+    # 二次认证提示：检测当前管理员是否已配邮箱（列不存在时视为未配置）
+    try:
+        me = q_one("SELECT email FROM admin_user WHERE id=%s", (session.get("aid"),))
+        twofa_missing = not bool(me and (me.get("email") or "").strip())
+    except Exception:
+        twofa_missing = True
+
     return render_template(
         "admin/dash.html", csrf=_csrf(),
         aname=session.get("aname", "admin"),
@@ -292,6 +555,7 @@ def dash():
         today_iso=today.isoformat(),
         min_iso=(today - timedelta(days=MAX_DAYS - 1)).isoformat(),
         presets=presets, active_days=active_days,
+        twofa_missing=twofa_missing,
     )
 
 
@@ -380,6 +644,107 @@ def toggle_user_status(uid):
     ))
 
 
+@bp.route("/ideas")
+@admin_required
+def ideas():
+    page = request.args.get("page", 1, type=int)
+    items, total = idea_moderation.list_ideas(
+        q=request.args.get("q") or None,
+        state=request.args.get("state") or None,
+        page=page,
+    )
+    response = make_response(render_template(
+        "admin/ideas.html", items=items, total=total, page=page,
+        q=request.args.get("q", ""), state=request.args.get("state", ""),
+        csrf=_csrf(), aname=session.get("aname", "admin"),
+    ))
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@bp.route("/ideas/<int:idea_id>")
+@admin_required
+def idea_detail(idea_id):
+    item = idea_moderation.get_metadata(idea_id)
+    if not item:
+        abort(404)
+    content = idea_moderation.get_viewable_content(idea_id)
+    try:
+        idea_moderation.record_audit(
+            idea_id, "view_metadata", session["aid"], session.get("aname", "admin"),
+            ip=_ip(), ua=request.headers.get("User-Agent", ""),
+        )
+        if content is not None:
+            idea_moderation.record_audit(
+                idea_id, "view_content", session["aid"], session.get("aname", "admin"),
+                ip=_ip(), ua=request.headers.get("User-Agent", ""),
+            )
+    except Exception:
+        current_app.logger.exception("idea 查看审计写入失败")
+        abort(503)
+    response = make_response(render_template(
+        "admin/idea_detail.html", item=item, content=content,
+        audit=idea_moderation.list_audit(idea_id), csrf=_csrf(),
+        aname=session.get("aname", "admin"),
+        reason_codes=idea_moderation.REASON_CODES,
+    ))
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@bp.route("/ideas/<int:idea_id>/moderate", methods=["POST"])
+@admin_required
+def idea_moderate(idea_id):
+    if not _check_csrf(request.form.get("csrf", "")):
+        abort(400)
+    action = request.form.get("action", "")
+    try:
+        result = idea_moderation.moderate(
+            idea_id, action, session["aid"], session.get("aname", "admin"),
+            request.form.get("row_version", ""), request.form.get("reason_code", ""),
+            request.form.get("reason_text", ""), request.form.get("internal_note", ""),
+            request.form.get("request_id", ""), _ip(), request.headers.get("User-Agent", ""),
+        )
+    except ValueError as exc:
+        return redirect(url_for("admin.idea_detail", idea_id=idea_id, e=str(exc)))
+    if result is None:
+        return redirect(url_for("admin.ideas", e="idea 不存在"))
+    if not result.get("ok"):
+        return redirect(url_for("admin.idea_detail", idea_id=idea_id, e=result["error"]))
+    if not result.get("idempotent"):
+        try:
+            from archive_api import invalidate_cache
+            invalidate_cache()
+        except Exception:
+            current_app.logger.warning("idea 治理后公开缓存失效失败", exc_info=True)
+        author = q_one("SELECT nickname,email FROM app_user WHERE id=%s", (result["author_id"],))
+        notify_request_id = str(idea_moderation.uuid5(
+            idea_moderation.NAMESPACE_URL, request.form.get("request_id", "") + "-notify",
+        ))
+        if author and author.get("email"):
+            state_text = "撤销" if action == "revoke" else "恢复"
+            reason = request.form.get("reason_text", "").strip()
+            try:
+                mailer._send(
+                    author["email"], f"【BNU AI Lab】你的 idea 已{state_text}",
+                    f"{author['nickname']}，你的 idea 已由管理员{state_text}。原因：{reason}",
+                    f"<p>{html.escape(str(author['nickname']))}，你的 idea 已由管理员{state_text}。</p><p>原因：{html.escape(reason)}</p>",
+                )
+                idea_moderation.record_audit(
+                    idea_id, "notify_sent", session["aid"], session.get("aname", "admin"),
+                    request_id=notify_request_id,
+                    ip=_ip(), ua=request.headers.get("User-Agent", ""),
+                )
+            except Exception:
+                current_app.logger.warning("idea 治理通知发送失败 idea_id=%s", idea_id, exc_info=True)
+                idea_moderation.record_audit(
+                    idea_id, "notify_failed", session["aid"], session.get("aname", "admin"),
+                    request_id=notify_request_id,
+                    ip=_ip(), ua=request.headers.get("User-Agent", ""),
+                )
+    return redirect(url_for("admin.idea_detail", idea_id=idea_id, ok="处置已记录"))
+
+
 @bp.route("/users/<int:uid>/delete", methods=["POST"])
 @admin_required
 def delete_user(uid):
@@ -395,9 +760,42 @@ def delete_user(uid):
         return redirect(url_for("admin.users", e="用户不存在"))
 
     email = row["email"]
-
     with db.connect() as conn:
         with conn.cursor() as cur:
+            cur.execute("SELECT id, email FROM app_user WHERE id=%s FOR UPDATE", (uid,))
+            locked_user = cur.fetchone()
+            if not locked_user:
+                conn.rollback()
+                return redirect(url_for("admin.users", e="用户不存在"))
+            email = locked_user["email"]
+            cur.execute("SELECT COUNT(*) AS n FROM idea WHERE author_id=%s", (uid,))
+            idea_count = cur.fetchone()["n"]
+            if idea_count:
+                conn.rollback()
+                return redirect(url_for(
+                    "admin.users", e=f"该用户仍有 {idea_count} 条 idea，请先在内容治理中处置后再删除账号",
+                ))
+            cur.execute(
+                "SELECT idea_id FROM idea_favorite WHERE user_id=%s "
+                "UNION SELECT idea_id FROM idea_like WHERE user_id=%s "
+                "UNION SELECT idea_id FROM idea_comment WHERE user_id=%s",
+                (uid, uid, uid),
+            )
+            affected_ideas = [row["idea_id"] for row in cur.fetchall()]
+            cur.execute(
+                "UPDATE idea_comment child JOIN idea_comment parent "
+                "ON child.parent_id=parent.id SET child.parent_id=NULL WHERE parent.user_id=%s",
+                (uid,),
+            )
+            for table in ("idea_favorite", "idea_like", "idea_comment", "idea_ai_job"):
+                cur.execute(f"DELETE FROM {table} WHERE user_id=%s", (uid,))
+            for idea_id in affected_ideas:
+                cur.execute(
+                    "UPDATE idea SET like_count=(SELECT COUNT(*) FROM idea_like WHERE idea_id=%s), "
+                    "favorite_count=(SELECT COUNT(*) FROM idea_favorite WHERE idea_id=%s), "
+                    "comment_count=(SELECT COUNT(*) FROM idea_comment WHERE idea_id=%s) WHERE id=%s",
+                    (idea_id, idea_id, idea_id, idea_id),
+                )
             # 对局归档与邀请：PvP 引用 conv_id，PvE 引用 player_a，均须清理
             cur.execute(
                 "DELETE FROM game_record WHERE "
@@ -506,11 +904,39 @@ def account():
         "FROM admin_user WHERE id=%s",
         (session.get("aid"),),
     )
+    # email 列可能尚未迁移，单独取且容错，保持账号页可用
+    try:
+        erow = q_one("SELECT email FROM admin_user WHERE id=%s", (session.get("aid"),))
+        me["email"] = (erow.get("email") or "") if erow else ""
+    except Exception:
+        me["email"] = ""
     return render_template(
         "admin/account.html", csrf=_csrf(),
         aname=session.get("aname", "admin"), me=me,
         err=request.args.get("e"), ok=request.args.get("ok"),
     )
+
+
+@bp.route("/account/email", methods=["POST"])
+@admin_required
+def account_email():
+    if not _check_csrf(request.form.get("csrf", "")):
+        abort(400)
+
+    pw = request.form.get("password") or ""
+    email = (request.form.get("email") or "").strip().lower()
+    row = q_one("SELECT password_hash FROM admin_user WHERE id=%s", (session.get("aid"),))
+    if not row or not check_password_hash(row["password_hash"], pw):
+        return redirect(url_for("admin.account", e="密码不正确，修改未生效"))
+    if not re.fullmatch(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", email):
+        return redirect(url_for("admin.account", e="邮箱格式不正确"))
+
+    _, err = _send_challenge(
+        session.get("aid"), "email", email, session.get("aname", "管理员"), _ip(),
+    )
+    if err:
+        return redirect(url_for("admin.account", e=err))
+    return redirect(url_for("admin.verify_2fa"))
 
 
 @bp.route("/account/name", methods=["POST"])
@@ -580,6 +1006,8 @@ def account_password():
             )
             conn.commit()
 
+    aid = session.get("aid")
+    _revoke_admin_state(aid)
     session.clear()
     return redirect(url_for("admin.login", pw=1))
 

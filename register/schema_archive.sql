@@ -13,7 +13,7 @@ USE school;
 
 CREATE TABLE IF NOT EXISTS `research_achievement` (
   `id`           VARCHAR(20)  NOT NULL COMMENT '前端编号，如 P-01',
-  `category`     VARCHAR(30)  NULL     COMMENT '分类：ai/edu/bio/energy/mat',
+  `category`     VARCHAR(30)  NULL     COMMENT '分类：ai/edu/bio/energy/math',
   `kind`         VARCHAR(20)  NULL     COMMENT '载体：poster/sheet/ticket/card/photo/note/journal/blueprint',
   `title`        VARCHAR(200) NOT NULL COMMENT '成果标题',
   `year`         VARCHAR(10)  NULL     COMMENT '年份，如 2025',

@@ -25,6 +25,7 @@ body {
 button, input, select, textarea { font-family: inherit; }
 button { cursor: pointer; }
 a { color: inherit; }
+button:focus-visible, a:focus-visible { outline: 2px solid var(--cobalt); outline-offset: 3px; }
 ::selection { background: var(--cobalt); color: var(--paper); }
 
 /* 舞台 */
@@ -33,6 +34,7 @@ a { color: inherit; }
   display: grid; place-items: center;
   overflow: hidden;
 }
+.viewport[inert] { pointer-events: none; user-select: none; }
 .stage {
   width: 1240px; height: 760px;
   position: relative; flex: none;
@@ -61,6 +63,22 @@ a { color: inherit; }
 .back-link { position: absolute; right: 26px; bottom: 42px; z-index: 60; font-size: 10px; color: var(--muted); text-decoration: none; border-bottom: 1px solid transparent; }
 .back-link:hover { color: var(--ink); border-color: var(--ink); }
 
+/* 可恢复的数据加载错误 */
+.archive-status {
+  position: fixed; left: 50%; bottom: 20px; z-index: 180;
+  transform: translateX(-50%);
+  display: flex; align-items: center; gap: 14px;
+  width: max-content; max-width: calc(100% - 32px);
+  padding: 10px 12px 10px 16px;
+  color: var(--paper); background: var(--ink);
+  box-shadow: 0 10px 30px rgba(28,26,22,.24);
+  font-size: 13px; line-height: 1.5;
+}
+.archive-status[hidden] { display: none; }
+.archive-status button { min-height: 44px; padding: 0 14px; border: 1px solid rgba(243,240,230,.5); background: transparent; color: var(--paper); }
+.archive-status button:hover { border-color: var(--paper); }
+.archive-status button:disabled { opacity: .55; cursor: wait; }
+
 /* Join in 纸片 */
 .join-card {
   position: absolute; left: 990px; top: 26px; z-index: 55;
@@ -83,6 +101,15 @@ a { color: inherit; }
   position: absolute; top: 0; left: 0;
   touch-action: none; user-select: none; cursor: grab;
   transition: transform 480ms cubic-bezier(0.2,0.7,0.2,1), opacity 480ms cubic-bezier(0.2,0.7,0.2,1);
+}
+.piece-sheet { width: 100%; height: 100%; position: relative; }
+.piece-category {
+  position: absolute; left: 50px; top: 8px; z-index: 2;
+  max-width: calc(100% - 106px); padding: 2px 5px;
+  border: 1px dashed #b7b2a4; background: rgba(243,240,230,.92);
+  color: #5c5952; font-size: 8px; line-height: 1.2;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  pointer-events: none;
 }
 .piece.is-dragging { transition: none; cursor: grabbing; }
 .piece:focus-visible { outline: 1px solid var(--cobalt); outline-offset: 4px; }
@@ -203,12 +230,12 @@ a { color: inherit; }
   background: rgba(28, 26, 22, .38);
   display: grid; place-items: center;
   padding: 24px;
-  opacity: 0; pointer-events: none;
-  transition: opacity 480ms cubic-bezier(0.2,0.7,0.2,1);
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity 480ms cubic-bezier(0.2,0.7,0.2,1), visibility 0s linear 480ms;
 }
-.detail-overlay.open { opacity: 1; pointer-events: auto; }
+.detail-overlay.open { opacity: 1; visibility: visible; pointer-events: auto; transition-delay: 0s; }
 .detail-sheet {
-  width: min(760px, 100%); max-height: min(88vh, 820px);
+  width: min(760px, 100%); max-height: min(88vh, 820px); max-height: min(88dvh, 820px);
   overflow-y: auto;
   background: var(--paper);
   padding: 34px 40px 30px;
@@ -234,6 +261,8 @@ a { color: inherit; }
 .detail-sheet .d-metric { font-size: 58px; font-weight: 800; letter-spacing: -.06em; color: var(--cobalt); line-height: .9; }
 .detail-sheet .d-metric-label { font-size: 13px; color: #4a473f; }
 .detail-sheet .d-summary { font-size: 16px; line-height: 1.6; color: #2c2a26; max-width: 62ch; }
+.detail-sheet .d-content { white-space: pre-wrap; overflow-wrap: anywhere; }
+.detail-sheet .d-content a { color: #1d4ed8; text-decoration: underline; text-underline-offset: 2px; }
 .detail-sheet .d-section { margin-top: 22px; }
 .detail-sheet .d-section h3 { margin: 0 0 6px; font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
 .detail-sheet .d-section p { margin: 0; font-size: 14px; line-height: 1.65; color: #3e3c36; max-width: 66ch; }
@@ -244,13 +273,73 @@ a { color: inherit; }
 .detail-sheet .d-nav { margin-left: auto; display: flex; gap: 8px; }
 .detail-sheet .d-nav button { min-height: 38px; padding: 0 12px; border: 1px solid #c9c4b4; background: transparent; font-size: 12px; }
 .detail-sheet .d-nav button:hover { border-color: var(--ink); }
-.detail-sheet .d-source { position: absolute; right: 40px; bottom: 8px; font-size: 9px; color: var(--faint); }
-@media (max-width: 760px) {
+.detail-sheet .d-source { position: absolute; right: 40px; bottom: 8px; font-size: 9px; color: var(--muted); }
+
+/* 窄屏取消整体缩放，纸片改为可滚动响应式网格。 */
+@media (max-width: 900px) {
+  body { overflow: auto; }
+  .viewport { display: block; height: auto; min-height: 100vh; min-height: 100dvh; overflow: visible; }
+  .stage {
+    width: 100%; height: auto; min-height: 100vh; min-height: 100dvh;
+    transform: none !important;
+    display: flex; flex-direction: column; gap: 18px;
+    padding: 20px max(16px, env(safe-area-inset-right)) 28px max(16px, env(safe-area-inset-left));
+  }
+  .wm { position: relative; left: auto; top: auto; z-index: 60; padding-right: 4px; }
+  .stage-nav { position: relative; left: auto; top: auto; flex-direction: row; width: 100%; overflow-x: auto; padding: 4px 0; }
+  .stage-nav button { flex: none; min-height: 44px; padding: 6px 10px; white-space: nowrap; }
+  .join-card { position: relative; left: auto; top: auto; width: min(100%, 440px); height: auto; min-height: 150px; }
+  .join-card .join-hint { display: none; }
+  .stage-hit {
+    position: relative; inset: auto;
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px 20px;
+    width: 100%; max-width: 900px; margin: 0 auto; padding: 8px 0 20px;
+  }
+  .piece {
+    position: relative; width: 100% !important; height: auto !important; min-width: 0;
+    transform: rotate(var(--piece-r, 0deg)) !important;
+    touch-action: pan-y; cursor: pointer;
+  }
+  .piece .face { height: auto; min-height: 230px; }
+  .photo-face .img { min-height: 130px; }
+  .stat { position: relative; width: auto; height: 96px; transform: none !important; }
+  .stat-note { position: relative; left: auto; bottom: auto; grid-column: 1 / -1; text-align: center; }
+  .archive-empty { position: relative; left: auto; top: auto; transform: none; grid-column: 1 / -1; white-space: normal; text-align: center; padding: 36px 12px; }
+  .rail-foot {
+    position: relative; left: auto; bottom: auto; z-index: 60;
+    width: 100%; max-width: 900px; margin: 0 auto;
+    flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 12px;
+  }
+  .rail-foot button { min-height: 44px; padding: 6px 0; }
+  .rail-foot .legal { margin-left: auto; }
+  .back-link, .selected-line {
+    position: relative; right: auto; bottom: auto; z-index: 60;
+    display: inline-flex; align-items: center; min-height: 44px;
+    width: fit-content; max-width: 100%;
+  }
+  .archive-status { bottom: max(16px, env(safe-area-inset-bottom)); }
   .detail-overlay { padding: 10px; }
-  .detail-sheet { padding: 24px 20px; max-height: 92vh; }
+  .detail-sheet { padding: 24px 20px; max-height: 92vh; max-height: 92dvh; }
   .detail-sheet h2 { font-size: 26px; }
   .detail-sheet .d-metric { font-size: 44px; }
   .detail-sheet .d-source { display: none; }
+  .detail-sheet .close { width: 44px; height: 44px; }
+  .detail-sheet .d-nav button { min-height: 44px; }
+}
+
+@media (max-width: 600px) {
+  .stage { padding: 16px 14px 24px; gap: 14px; }
+  .stage-hit { grid-template-columns: 1fr; gap: 24px; max-width: 520px; }
+  .piece .face { min-height: 240px; }
+  .rail-foot { align-items: stretch; }
+  .rail-foot .legal { width: 100%; margin-left: 0; }
+  .detail-overlay { padding: 8px; }
+  .detail-sheet { padding: 52px 18px 24px; max-height: 94vh; max-height: 94dvh; }
+  .detail-sheet h2 { font-size: 25px; }
+  .detail-sheet .d-metric-row { flex-wrap: wrap; }
+  .detail-sheet .d-foot { flex-direction: column; align-items: stretch; }
+  .detail-sheet .d-nav { width: 100%; }
+  .detail-sheet .d-nav button { flex: 1; }
 }
 
 @media (max-width: 760px) {
@@ -261,5 +350,5 @@ a { color: inherit; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .piece, .join-card { transition: none; }
+  .piece, .join-card, .detail-overlay, .detail-sheet { transition: none; }
 }

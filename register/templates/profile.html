@@ -22,6 +22,7 @@
       <a href="{{ url_for('home') }}">消息</a>
       <a href="{{ url_for('ideas.ideas_plaza') }}">idea</a>
       <a href="{{ url_for('archive') }}">学习分享室</a>
+      <a href="{{ url_for('ideas.content_profile') }}">我的主页</a>
       <a href="{{ url_for('profile') }}" class="on" aria-current="page">账号</a>
     </nav>
     <form method="post" action="{{ url_for('logout') }}">
@@ -243,7 +244,29 @@
       </div>
     </details>
 
+    <details class="guide">
+      <summary>idea 广场 · 发布与讨论</summary>
+      <div class="guide-body">
+        <ol>
+          <li>进入「idea」广场，点「＋ 发布 idea」，填写标题、正文、分类与标签。</li>
+          <li>发布时选择可见范围：<b>公开</b>内容可进入领域头条与学习分享室；<b>仅好友</b>、<b>仅自己</b>只留在社区内。</li>
+          <li>在详情页点赞、收藏或评论；广场卡片会显示每条 idea 的点赞数与收藏数。作者可点「编辑」修改已发布内容。</li>
+          <li>用分类、关键词和排序筛选广场；关键词可匹配标题、正文、标签和作者昵称，且只搜索当前可见的 idea。</li>
+          <li>进入「我的主页」查看自己的全部内容与收藏；被管理员撤销的内容会显示原因，并停止编辑和互动。</li>
+        </ol>
+      </div>
+    </details>
 
+    <details class="guide">
+      <summary>学习分享室 · 公开分享</summary>
+      <div class="guide-body">
+        <ol>
+          <li>学习分享室公开展示已发布且可见范围为「公开」的 idea，与领域头条使用同一数据来源。</li>
+          <li>点击成果卡片可查看完整正文；草稿、仅好友和仅自己的内容不会进入公开页。</li>
+          <li>未登录也可浏览公开内容；登录后可从页面进入 idea 广场继续交流。</li>
+        </ol>
+      </div>
+    </details>
 
     <details class="guide">
       <summary>头像与账号</summary>
@@ -254,6 +277,21 @@
           <li>昵称可自行修改；学号、姓名来自学籍名单，不能改。</li>
           <li>密码修改后立即生效，其他设备的登录态会失效。</li>
         </ol>
+      </div>
+    </details>
+
+    <details class="guide">
+      <summary>升级任务 · 本地已完成，待部署验收</summary>
+      <div class="guide-body">
+        <p><b>以下升级已写入本地代码与回归测试，部署后即可使用：</b></p>
+        <ol>
+          <li><b>个人主页：</b>从头像菜单或导航进入「我的主页」，集中查看自己发布的全部 idea，包括草稿、已发布与已归档，并展示每条内容的点赞、收藏和讨论数。</li>
+          <li><b>我的收藏：</b>在个人主页查看收藏过的内容，按收藏时间或热度排序，支持关键词、分类、精确标签筛选与直接取消收藏。</li>
+          <li><b>分类标准化：</b>分类固定为 <b>ai / edu / bio / energy / math / other</b>，发布与编辑时用下拉选择；FFT、材料、教学等细分主题放入标签，历史自定义分类保留原值后迁移。</li>
+          <li><b>编辑与内容治理：</b>作者可在详情页继续编辑已发布 idea；内容已变化时会提示刷新，避免覆盖别人的修改。管理员可在「内容治理」撤销或恢复违规内容，并保留处置记录。</li>
+          <li><b>后续扩展：</b>公开作者主页、命名收藏夹与代表作置顶，将在核心功能验收后逐步考虑。</li>
+        </ol>
+        <p>收藏内容仍按当前权限显示；对方改为仅好友、仅自己、撤回或撤销后，收藏页不会泄露原文。被撤销的内容作者仍可查看，但不能继续编辑或互动。</p>
       </div>
     </details>
 
@@ -279,5 +317,12 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='vendor/cropper.min.css') }}?v=1">
 <script src="{{ url_for('static', filename='vendor/cropper.min.js') }}?v=1"></script>
 <script src="{{ url_for('static', filename='avatar-crop.js') }}?v=3"></script>
+<script>
+document.querySelectorAll('form[data-confirm]').forEach(function (form) {
+  form.addEventListener('submit', function (event) {
+    if (!window.confirm(form.dataset.confirm || '确定继续吗？')) event.preventDefault();
+  });
+});
+</script>
 </body>
 </html>

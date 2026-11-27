@@ -1,6 +1,8 @@
 # 学生信息管理 Web 应用
 
-基于 Flask + MySQL 的 CRUD 管理页，面向公网部署，按最小权限原则设计。
+基于 Flask + MySQL 的 CRUD 管理页。当前生产仅通过 SSH 隧道访问，不直接面向公网；按最小权限原则设计。
+
+> **部署红线（2026-11-27 复审补充）**：已有服务器仍禁止重跑 `deploy/deploy.py` 或 `deploy/install.sh`。两者现已改为空环境初始化：写操作前只读预检，发现既有应用、`.env`、register/webapp 服务、自定义 Nginx 站点、系统用户或 `studentapp` 数据库账号即非零熔断，且不支持 `--force`。补丁不会轮换共享数据库密码、重置 register `SECRET_KEY`、修改 UFW 或回显凭据；Nginx 模板只绑定回环 80。日常更新仍须使用经审核的增量流程。
 
 ## 目录结构
 
@@ -54,9 +56,7 @@ ssh -N -L 8080:127.0.0.1:80 root@47.118.28.10
 
 安全组只需放行 **22**，80 / 8080 / 3306 一律关闭。
 
-如需恢复公网访问（例如以后配了域名上 HTTPS），把
-`/www/server/panel/vhost/nginx/student-web.conf` 里的
-`listen 127.0.0.1:80` 改回 `listen 80`，再放行安全组即可。
+如需恢复公网访问，必须先配置受信任 HTTPS 证书、443 监听与 `COOKIE_SECURE=1`，再经单独授权调整安全组；不得只把 `listen 127.0.0.1:80` 改回公网 `listen 80`。
 
 
 ## 安全设计
@@ -95,13 +95,21 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON school.student
 | SQL 注入 | 全部参数化查询；排序字段走 `SORTABLE` 白名单；`LIKE` 通配符转义 |
 | XSS | Jinja2 自动转义；前端全部用 `textContent`，不拼 `innerHTML`；CSP 禁内联脚本 |
 | CSRF | 会话内一次性 token，写操作校验，`hmac.compare_digest` 常量时间比较 |
-| 暴力破解 | 同 IP 5 次失败锁定 5 分钟；nginx 侧 `limit_conn` 限制并发 |
+| 暴力破解 | 同 IP 5 次失败锁定 5 分钟；Nginx 侧限制并发。两套 Nginx 模板全部用 `$remote_addr` 覆盖 XFF，避免应用层来源 IP 塌缩；生产模板已同步并完成 `nginx -t`、监听与 HTTP 验收 |
 | 会话固定 | 登录成功后 `session.clear()` 重新签发 |
 | 点击劫持 | `X-Frame-Options: DENY` + `frame-ancestors 'none'` |
 | 信息泄露 | 全局异常处理不回显堆栈；隐藏 `X-Powered-By` / `server_tokens off` |
 | 请求放大 | `MAX_CONTENT_LENGTH=256KB`，nginx `client_max_body_size 256k` |
 
-### 5. 密码存储
+### 6. 代理客户端 IP：已修复并同步生产
+
+原 `deploy/nginx-bt-student-web.conf` 使用 `X-Forwarded-For $proxy_add_x_forwarded_for` 追加值，配合 `ProxyFix(x_for=1)` 会取到 Nginx 自身的 `127.0.0.1`，使登录失败计数成为全局限流。
+
+- 2026-11-27 两套 Nginx 模板的全部反代位置已改用 `$remote_addr` **覆盖** XFF；
+- Gunicorn 继续只绑定 `127.0.0.1:8080`，代理链仍只有一层；
+- 生产 Nginx 已与本地加固模板逐字一致，`nginx -t`、回环监听、登录页与 API 鉴权响应均验收通过。
+
+### 7. 密码存储
 
 登录密码用 Werkzeug `scrypt`（N=32768, r=8, p=1）哈希，不存明文。
 
@@ -125,14 +133,12 @@ tail -f /www/wwwlogs/student-web.log  # 访问日志（宝塔环境）
 
 ## 已知限制
 
-**当前是 HTTP 明文传输。** 登录密码和会话 Cookie 在公网上是明文，理论上可被链路中间节点嗅探。
+**当前公网未开放，HTTP 明文仅存在于 SSH 隧道内部。** 登录密码和会话 Cookie 不会以明文经过公网链路；若以后要恢复公网访问，必须先配置受信任的 HTTPS 证书，不能直接按初始化脚本开放 80。
 
-彻底解决需要 HTTPS，而 HTTPS 需要域名（IP 无法签发受信任证书）。遇到以下任一情况应尽快补上：
+遇到以下任一情况应尽快补齐 HTTPS 与公网化安全整改：
 
-- 要长期使用这套系统
+- 要长期直接公网使用这套系统
 - 要录入真实学生数据（涉及个人信息保护）
-- 多人访问
+- 多人直接从公网访问
 
-补 HTTPS 的路径：买域名 → 解析到 ECS → 用 certbot 申请 Let's Encrypt 免费证书 → nginx 配置 443 → `.env` 里 `COOKIE_SECURE=1`。
-
-在补上 HTTPS 之前，建议只在可信网络使用，不要录入真实个人信息。
+公网化前还必须确认安全组、Nginx 回环监听、Cookie `Secure` 与代理信任链。**2026-11-27 本地 `python webapp/tests/selftest.py` 为 51 通过 / 0 失败**，覆盖 XFF、回环监听、预检熔断和部署验收失败路径；生产已同步应用与 Nginx 加固配置，并完成 `nginx -t`、服务、监听、HTTP 响应与 `.env` 哈希验收。未执行空环境初始化安装。

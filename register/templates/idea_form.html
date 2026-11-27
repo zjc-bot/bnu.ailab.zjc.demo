@@ -6,7 +6,7 @@
 <meta name="csrf" content="{{ csrf }}">
 <title>{{ '编辑 idea' if idea else '发布 idea' }} · BNU AI Lab</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=11">
-<link rel="stylesheet" href="{{ url_for('static', filename='idea.css') }}?v=2">
+<link rel="stylesheet" href="{{ url_for('static', filename='idea.css') }}?v=5">
 </head>
 <body><a class="skip-link" href="#main">跳到主要内容</a>
 
@@ -23,6 +23,7 @@
       <a href="{{ url_for('home') }}">消息</a>
       <a href="{{ url_for('ideas.ideas_plaza') }}" class="on">idea</a>
       <a href="{{ url_for('archive') }}">学习分享室</a>
+      <a href="{{ url_for('ideas.content_profile') }}">我的主页</a>
       <a href="{{ url_for('profile') }}">账号</a>
     </nav>
     <form method="post" action="{{ url_for('logout') }}">
@@ -40,17 +41,18 @@
   </div>
 
   <div class="card">
-    <form id="ideaForm" data-idea-id="{{ idea.id if idea else '' }}">
+    <form id="ideaForm" data-idea-id="{{ idea.id if idea else '' }}" data-row-version="{{ idea.row_version if idea else 0 }}" {% if read_only %}data-read-only="true"{% endif %}>
+      {% if read_only %}<p class="err" role="status">该 idea 已被管理员撤销，当前仅可查看{% if idea.moderation_reason %}：{{ idea.moderation_reason }}{% endif %}。</p>{% endif %}
       <label class="field"><span>标题 <i class="req">*</i></span><input id="iTitle" type="text" maxlength="200" required value="{{ idea.title if idea else '' }}" placeholder="一句话说清你的 idea"></label>
       <label class="field"><span>正文 <i class="req">*</i></span><textarea id="iContent" rows="10" maxlength="20000" required placeholder="背景、做法、想找谁一起做……">{{ idea.content if idea else '' }}</textarea></label>
       <div class="idea-form-row">
-        <label class="field"><span>分类</span><select id="iCategory"><option value="">未分类</option>{% for c in categories %}<option value="{{ c }}" {% if idea and idea.category == c %}selected{% endif %}>{{ c }}</option>{% endfor %}</select></label>
+        <label class="field"><span>分类 <i class="req">*</i></span><select id="iCategory" required>{% for c in categories %}<option value="{{ c.value }}" {% if idea and idea.category == c.value %}selected{% elif not idea and c.value == 'other' %}selected{% endif %}>{{ c.label }}（{{ c.value }}）</option>{% endfor %}</select></label>
         <label class="field"><span>可见范围</span><select id="iVisibility">{% for v in visibilities %}<option value="{{ v }}" {% if idea and idea.visibility == v %}selected{% elif not idea and v == 'public' %}selected{% endif %}>{% if v == 'public' %}公开（进入头条与学习分享室）{% elif v == 'friends' %}仅好友{% elif v == 'private' %}仅自己{% else %}{{ v }}{% endif %}</option>{% endfor %}</select></label>
       </div>
       <label class="field"><span>标签（逗号分隔，最多 8 个）</span><input id="iTags" type="text" maxlength="255" value="{{ idea.tags if idea else '' }}" placeholder="例如：小样本, 跨模态, 可解释性"></label>
       <div class="err" id="formErr" role="alert"></div>
       <div class="idea-form-actions">
-        <button class="btn primary" type="submit">{{ '保存修改' if idea else '发布' }}</button>
+        <button class="btn primary" type="submit" {% if read_only %}disabled{% endif %}>{{ '保存修改' if idea else '发布' }}</button>
         <a class="btn ghost" href="{{ url_for('ideas.ideas_plaza') }}">取消</a>
       </div>
     </form>
@@ -58,6 +60,6 @@
 </main>
 
 <div class="toast" id="toast" role="status" hidden></div>
-<script src="{{ url_for('static', filename='idea.js') }}?v=2"></script>
+<script src="{{ url_for('static', filename='idea.js') }}?v=4"></script>
 </body>
 </html>
